@@ -1,0 +1,9 @@
+_targets/
+data/
+manual_figures/
+output/
+*Zone.Identifier
+.RData
+.Rhistory
+inspect.html
+Rplots.pdf
