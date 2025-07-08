@@ -13,7 +13,7 @@ tar_option_set(
     "tidyverse", "vegan", "glue", "patchwork", "ggplot2", "readxl",
     "ggrepel", "ggpubr", "pheatmap", "ggplotify", "patchwork",
     "usedist", "reticulate", "lsa", "rtk", "logger", "openxlsx",
-    "colorspace"
+    "colorspace", "igraph", "data.table"
   )
   # format = "qs", # Optionally set the default storage format. qs is fast.
   #
@@ -125,6 +125,21 @@ list(
       tbl_metab_annotations = tbl_metab_annotations,
       output_path = "output/tables/supplementary/metabolite_labels.xlsx"
     )
+  ),
+  tar_target(
+    pth_metab_additional_annotations,
+    paste0(c("data/source/untargetted_metabolomics/",
+             "Metabolite_list_DIME_LDra.xlsx"),
+      collapse = ""
+    )
+  ),
+  tar_target(
+    tbl_metab_additional_annotations,
+    read_xlsx(pth_metab_additional_annotations) |>
+      select(metabolite, estimated_taxa_correlation, network_hub, log2fc,
+      `most likely (or comment)`, `certainty`, plot_manual_label,
+      plot_confidence) |>
+      rename(identity_or_comment = `most likely (or comment)`)
   ),
   tar_target(
     pth_dbcan,
@@ -454,6 +469,17 @@ list(
     )
   ),
   tar_target(
+    plt_metab_volcano_revised_ident,
+    metabolite_volcano(
+      tbl_metab_ttest,
+      tbl_metab_peaks,
+      combine_additional_idents(
+        tbl_metab_annotations,
+        tbl_metab_additional_annotations
+      )
+    )
+  ),
+  tar_target(
     plt_metab_figure,
     metabolite_figure(
       plt_metab_volcano,
@@ -604,7 +630,7 @@ list(
   tar_target(
     fig_three,
     paper_figure_three(
-      plt_volcano = plt_metab_volcano,
+      plt_volcano = plt_metab_volcano_revised_ident,
       plt_scfa_box = plt_scfa_box,
       plt_scfa_correlation = plt_scfa_correlation,
       plt_um_correlations = plt_food_metabolite_corr_hb
@@ -616,7 +642,7 @@ list(
       plt = fig_three,
       pth = "figure_three",
       width = 6,
-      height = 7,
+      height = 5,
       scale = 1.5
     )
   ),
@@ -673,6 +699,19 @@ list(
       tbl_metab_peaks,
       tbl_metab_annotations,
       tbl_taxa_corr
+    )
+  ),
+
+  # Check consistency of edges for HBcom-down metabolites
+  tar_target(
+    ig_hb,
+    readRDS("data/derived/networks/after_high.igraph.Rds")
+  ),
+  tar_target(
+    tbl_ig_hb_consistency,
+    check_neighbourhood_consistency(
+      ig_hb,
+      vertex_names = c("fecal703neg", "fecal1214pos")
     )
   )
 )

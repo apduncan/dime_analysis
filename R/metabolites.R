@@ -146,7 +146,11 @@ metabolite_volcano <- function(
         "q < 0.05" = "black"
       ),
       name = "Diet") +
-    geom_text_repel(aes(label = plot_manual_label), size = 2.5) +
+    geom_text_repel(
+      aes(label = plot_manual_label),
+      size = 2.5,
+      min.segment.length = 0.2
+    ) +
     facet_wrap(~Project) +
     xlab("Log2 Fold Change") +
     ylab("-log(p value)") +
@@ -538,8 +542,7 @@ paper_figure_three <- function(
   #' @param plt_um_correlations Correlation of metabolites and food groups
 
   layout <- "AAAA
-  BCCC
-  DDDD"
+  BCCC"
 
   plt <- wrap_plots(
     plt_volcano +
@@ -561,12 +564,8 @@ paper_figure_three <- function(
         title = "SCFA",
         subtitle = "Correlation to Bioactives"
       ),
-    as.ggplot(plt_um_correlations) +
-      labs(
-        title = "Metabolite Correlation to Food Groups",
-      ),
     design = layout,
-    heights = c(2, 3, 3),
+    heights = c(2, 3),
     widths = c(1, 2, 2, 1)
   ) +
     plot_annotation(tag_levels = "A")
@@ -687,4 +686,39 @@ metabolite_highest_labelled <- function(
     mutate(
       top_50 = TRUE
     )
+}
+
+format_additional_idents <- function(tbl, confidence_max) {
+  #' Convert additional identifications into a format compatible with
+  #' existing volcano plot code
+
+  # Excepts to have columns score, project(f/u), ionmode (neg/pos), name,
+  # plot_manual_label
+  parts <- str_match(tbl$metabolite, "([a-z]*)(\\d*)([a-z]*)")
+  tbl <- tbl |>
+    mutate(
+      project = parts[, 2],
+      ionmode = parts[, 4],
+      feature_id = parts[, 3],
+      score = 1.0
+    ) |>
+    filter(plot_confidence <= confidence_max)
+  return(tbl)
+}
+
+combine_additional_idents <- function(
+  tbl_metab_annotations,
+  tbl_metab_revised,
+  confidence_max_new = 2
+) {
+  #' Collaborators performed additional identification for fecal metabolites.
+  #' Want to keep the existing annotation of urinary metabolites.
+  tbl_new_fecal <- tbl_metab_revised |>
+    format_additional_idents(confidence_max = confidence_max_new) |>
+    select(project, feature_id, ionmode, plot_manual_label, score)
+  tbl_exi_urine <- tbl_metab_annotations |>
+    filter(project == "urine") |>
+    select(project, feature_id, ionmode, plot_manual_label, score) |>
+    filter(!grepl("?", plot_manual_label, fixed = TRUE))
+  return(rbind(tbl_new_fecal, tbl_exi_urine))
 }
