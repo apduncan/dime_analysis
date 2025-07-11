@@ -49,41 +49,6 @@ read_metabolites <- function(pth) {
     as.matrix()
 }
 
-read_food_groups <- function(
-  pth_diet_group,
-  pth_diet_group_labelled
-) {
-  #' Produce a table of food item intake
-  #'
-  #' @param pth_diet_group Path to full itemised intake as excel spreadsheet
-  #' @param pth_diet_group_labelled Path to labelled food item intake as excel
-  #' spreadsheet
-  #' @returns Food group frequency per participant per time period as tibble
-
-  fd_grps <- read_delim(pth_diet_group)
-  lbl_grps <- read_excel(pth_diet_group_labelled)
-
-  # Make a subset of the labelled dataframe, then join the full diaries
-  # to it using participant and start date as a composite key
-  full_arms <- lbl_grps %>%
-    select(Participant, Log_Start_Date, time_point, sample_arm) %>%
-    distinct() %>%
-    left_join(fd_grps, join_by(Participant, Log_Start_Date))
-
-  # Create clearer labels for arm
-  full_arms <- full_arms %>%
-    mutate(diet = sample_arm |> map_chr(\(x) {
-      switch(x,
-            "before_high" = "Baseline",
-            "before_low" = "Baseline",
-            "after_high" = "High Bioactive",
-            "after_low" = "Low Bioactive",
-            "Error")
-    }))
-
-  return(full_arms)
-}
-
 read_food_composition <- function(
   pth_adj_nutrients,
   pth_nutrients

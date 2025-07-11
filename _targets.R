@@ -1,8 +1,3 @@
-# Created by use_targets().
-# Follow the comments below to fill in this target script.
-# Then follow the manual to check and run the pipeline:
-#   https://books.ropensci.org/targets/walkthrough.html#inspect-the-pipeline
-
 # Load packages required to define the pipeline:
 library(targets)
 library(tarchetypes) # Load other packages as needed.
@@ -13,50 +8,17 @@ tar_option_set(
     "tidyverse", "vegan", "glue", "patchwork", "ggplot2", "readxl",
     "ggrepel", "ggpubr", "pheatmap", "ggplotify", "patchwork",
     "usedist", "reticulate", "lsa", "rtk", "logger", "openxlsx",
-    "colorspace", "igraph", "data.table"
+    "colorspace", "igraph", "data.table", "igraph", "SpiecEasi", "NetCoMi",
+    "tidyverse", "tools"
   )
-  # format = "qs", # Optionally set the default storage format. qs is fast.
-  #
-  # Pipelines that take a long time to run may benefit from
-  # optional distributed computing. To use this capability
-  # in tar_make(), supply a {crew} controller
-  # as discussed at https://books.ropensci.org/targets/crew.html.
-  # Choose a controller that suits your needs. For example, the following
-  # sets a controller that scales up to a maximum of two workers
-  # which run as local R processes. Each worker launches when there is work
-  # to do and exits if 60 seconds pass with no tasks to run.
-  #
-  #   controller = crew::crew_controller_local(workers = 2, seconds_idle = 60)
-  #
-  # Alternatively, if you want workers to run on a high-performance computing
-  # cluster, select a controller from the {crew.cluster} package.
-  # For the cloud, see plugin packages like {crew.aws.batch}.
-  # The following example is a controller for Sun Grid Engine (SGE).
-  # 
-  #   controller = crew.cluster::crew_controller_sge(
-  #     # Number of workers that the pipeline can scale up to:
-  #     workers = 10,
-  #     # It is recommended to set an idle time so workers can shut themselves
-  #     # down if they are not running tasks.
-  #     seconds_idle = 120,
-  #     # Many clusters install R as an environment module, and you can load it
-  #     # with the script_lines argument. To select a specific verison of R,
-  #     # you may need to include a version string, e.g. "module load R/4.3.2".
-  #     # Check with your system administrator if you are unsure.
-  #     script_lines = "module load R"
-  #   )
-  #
-  # Set other options as needed.
 )
 
 # Run the R scripts in the R/ folder with your custom functions:
 tar_source()
-# tar_source("other_functions.R") # Source other scripts as needed.
 
-# Replace the target list below with your own:
+# Target list
 list(
-  # Reading data
-  # Metdata
+  # ==== READ METADATA ====
   tar_target(
     pth_sample_metadata,
     "data/source/sample_metadata.csv",
@@ -66,7 +28,10 @@ list(
     tbl_sample_metadata,
     read_metadata(pth_sample_metadata)
   ),
-  # Metabolites
+
+  # ==== READ METABOLITES ====
+  # These are matrices of peak values in each sample, extracted from
+  # peaklist_long_norm.rds
   tar_target(
     pth_metab_urine,
     "data/derived/untargetted_metabolomics/um_full_urine.tsv",
@@ -87,19 +52,24 @@ list(
     read_metabolites(pth_metab_faeces) |>
     order_table(rownames = TRUE)
   ),
+  # These are the results of statistical analysis carried out by George Savva
+  # Code for this analysis is available in data/source/untargetted_metabolomics
+  # as quarto markdown and knit versions.
   tar_target(
     pth_metab_ttest,
-    "data/source/untargetted_metabolomics/allFeaturesPvalues2.xlsx"
+    "data/source/untargetted_metabolomics/test_results.xlsx"
   ),
   tar_target(
     tbl_metab_ttest,
     read_xlsx(pth_metab_ttest) |>
       mutate(full_id = paste0(Project, `Feature ID`, `Ion mode`))
   ),
+  # This is output of untargetted metabolomics, which has been further processed
+  # in several ways
   tar_target(
     pth_metab_peaks,
-    paste0(c("data/source/untargetted_metabolomics/raw/DIME_results/save/",
-             "peaklist_long_norm.rds"),
+    paste0(c("data/source/untargetted_metabolomics/analysis/raw/",
+      "DIME_results/save/peaklist_long_norm.rds"),
       collapse = ""
     )
   ),
@@ -108,10 +78,11 @@ list(
     readRDS(pth_metab_peaks) |>
       mutate(full_id = paste0(gsub("DIME", "", project), feature_id, ionmode))
   ),
+  # Initial tentative annotations of some urine & fecal peaks
   tar_target(
     pth_metab_annotations,
     paste0(c("data/source/untargetted_metabolomics/",
-             "selected_features_qib_annotated_manual_additions.xlsx"),
+             "initial_identifications.xlsx"),
       collapse = ""
     )
   ),
@@ -119,6 +90,7 @@ list(
     tbl_metab_annotations,
     read_xlsx(pth_metab_annotations)
   ),
+  # Make an output with metabolite labels
   tar_target(
     pth_metab_label_supplementary,
     metabolite_labelled_supplementary(
@@ -126,10 +98,11 @@ list(
       output_path = "output/tables/supplementary/metabolite_labels.xlsx"
     )
   ),
+  # Additional identifications for faecal metabolites of interest
   tar_target(
     pth_metab_additional_annotations,
     paste0(c("data/source/untargetted_metabolomics/",
-             "Metabolite_list_DIME_LDra.xlsx"),
+             "additional_fecal_identifications.xlsx"),
       collapse = ""
     )
   ),
@@ -141,6 +114,20 @@ list(
       plot_confidence) |>
       rename(identity_or_comment = `most likely (or comment)`)
   ),
+
+  # ==== READ SCFA ====
+  tar_target(
+    pth_scfa,
+    "data/source/scfa/SCFA_DIME.csv",
+    format = "file"
+  ),
+  tar_target(
+    tbl_scfa,
+    read_delim(pth_scfa)
+  ),
+
+  # ==== READ FUNCTIONAL ANNOTATIONS ====
+  # ==== READ DBCAN ====
   tar_target(
     pth_dbcan,
     "data/source/microbiome/dbcan",
@@ -159,34 +146,8 @@ list(
     tbl_mgs_association,
     read_delim(pth_mgs_association)
   ),
-  tar_target(
-    pth_scfa,
-    "data/source/scfa/SCFA_DIME.csv",
-    format = "file"
-  ),
-  tar_target(
-    tbl_scfa,
-    read_delim(pth_scfa)
-  ),
-  # Diet
-  tar_target(
-    pth_food_diary,
-    paste0(c("data/source/food_groups/",
-             "cleaned_Nutritics_for_Fred_with_bioactives_170223.csv"),
-      collapse = ""),
-    format = "file"
-  ),
-  tar_target(
-    pth_food_labelled,
-    paste0(c("data/source/food_groups/",
-             "Nutrtics_raw_Data_modified_wth_biosample_IDs_FB_10.08.23.xlsx"),
-      collapse = ""),
-    format = "file"
-  ),
-  tar_target(
-    tbl_food_groups,
-    read_food_groups(pth_food_diary, pth_food_labelled)
-  ),
+
+  # ==== READ DIET ====
   tar_target(
     pth_diet_composition_adj,
     "data/source/diet/residual_adjusted.tsv",
@@ -204,6 +165,8 @@ list(
       pth_diet_nutrients
     )
   ),
+
+  # ==== READ MICROBIOME ====
   # Microbiome
   tar_target(
     pth_genus,
@@ -241,6 +204,7 @@ list(
     taxa_tss(tbl_species) |>
     order_table()
   ),
+  # Absolute microbiome abundances
   tar_target(
     tbl_rare_scaled_species,
     scale_taxa(
@@ -250,6 +214,8 @@ list(
       tbl_cell_count
     )
   ),
+
+  # ==== CALCULATE MICROBIOME DISSIMILARITIES ====
   tar_target(
     dst_species,
     taxa_distance(tbl_species_tss)
@@ -268,6 +234,8 @@ list(
       tbl_rare_scaled_species
     )
   ),
+
+  # ==== CALCULATE ENTEROSIGNATURES ====
   tar_target(
     pth_es,
     enterosignature_reapply(
@@ -278,6 +246,8 @@ list(
     lst_es,
     read_es(pth_es)
   ),
+
+  # ==== ANALYSIS OF ENTEROSIGNATURES ====
   tar_target(
     dbrda_es,
     enterosignature_dbrda(
@@ -294,6 +264,9 @@ list(
       tbl_sample_metadata
     )
   ),
+
+  # ==== ANALYSIS OF TAXONOMIC DIVERSITY ====
+  # Alpha diversity
   tar_target(
     lst_species_alpha,
     rarefy_tbl(
@@ -327,6 +300,8 @@ list(
       scale = 1
     )
   ),
+
+  # Beta diversity
   tar_target(
     plt_rare_scaled_species_bc_within,
     plot_beta_within(
@@ -342,7 +317,8 @@ list(
       tbl_mgs_association
     )
   ),
-  # Function
+
+  # ==== READ FUNCTION ====
   tar_target(
     pth_ko,
     "data/source/microbiome/function/KGML0.txt",
@@ -361,6 +337,8 @@ list(
       seed = 9898
     )
   ),
+
+  # ==== ANALYSIS OF FUNCTION DIVERSITY ====
   tar_target(
     tbl_tss_ko,
     taxa_tss(
@@ -442,8 +420,8 @@ list(
       tbl_sample_metadata
     )
   ),
-  # Analysis
-  # Metabolite analysis
+
+  # ==== ANALYSIS OF METABOLITES ====
   tar_target(
     dbrda_urine,
     metabolite_dbrda(
@@ -528,7 +506,7 @@ list(
     food_group_frequency(tbl_food_groups, FOOD_GROUPS)
   ),
 
-  # Distance matrices
+  # ==== CALCULATE FOOD AND METABOLITE DISSIMILARITIES ====
   tar_target(
     dst_urine,
     metabolite_distance(mat_metab_urine)
@@ -551,7 +529,7 @@ list(
   ),
 
 
-  # Food & metabolite
+  # ==== ANALYSIS FOOD AND METABOLITES ====
   tar_target(
     tbl_food_metab_corr_hb,
     metabolite_food_correlation(
@@ -592,7 +570,8 @@ list(
       angle_col = 45
     )
   ),
-  # Food, metabolite, taxa
+
+  # ==== ANALYSIS FOOD METABOLITE TAXA ====
   tar_target(
     df_mantel_tests,
     mantel_tests(
@@ -604,7 +583,9 @@ list(
       dst_faeces
     )
   ),
-  # Compose manuscript figures
+
+  
+  # ==== PLOT MANUSCRIPT FIGURES ====
   tar_target(
     fig_two,
     paper_figure_two(
@@ -687,7 +668,39 @@ list(
     )
   ),
 
-  # List of metabolites for review by Lars/Jan
+  # ==== ANALYSIF OF NETWORKS ====
+  tar_file_read(
+    net_lb_se, "data/derived/networks/after_low.Rds", readRDS(!!.x)
+  ),
+  tar_file_read(
+    net_hb_se, "data/derived/networks/after_high.Rds", readRDS(!!.x)
+  ),
+  tar_file_read(
+    net_lb_ig, "data/derived/networks/after_low.igraph.Rds", readRDS(!!.x)
+  ),
+  tar_file_read(
+    net_hb_ig, "data/derived/networks/after_high.igraph.Rds", readRDS(!!.x)
+  ),
+  tar_file_read(
+    net_tbl_pfam_md, "data/derived/networks/feature_md.EM.PFAML0.tsv",
+    read_delim(!!.x)
+  ),
+  # Do global network property analysis
+  tar_target(
+    obj_net_an,
+    netcomi_graph_analysis(
+      hb_se = net_hb_se,
+      lb_se = net_lb_se,
+      fun_md = net_tbl_pfam_md,
+      metab_md = tbl_metab_annotations,
+      metab_ttest = tbl_metab_ttest,
+      hb_ig = net_hb_ig,
+      lb_ig = net_lb_ig
+    )
+  ),
+
+  # ==== ANALYSIS OF NETWORKS ====
+  # List of metabolites for further investigation
   tar_target(
     tbl_taxa_corr,
     read_delim("data/derived/taxa/metabolite_taxa_weights.csv")
