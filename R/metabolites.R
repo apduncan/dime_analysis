@@ -528,8 +528,7 @@ plot_dbrda_correlation_heatmap <- function(
 paper_figure_three <- function(
   plt_volcano,
   plt_scfa_box,
-  plt_scfa_correlation,
-  plt_um_correlations
+  plt_scfa_correlation
 ) {
   #' Combine metabolite subfigures
   #'

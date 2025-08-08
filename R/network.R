@@ -1,6 +1,6 @@
 netcomi_graph_analysis <- function(
-  hb_se,
-  lb_se,
+  hb_ass,
+  lb_ass,
   fun_md,
   metab_md,
   metab_ttest,
@@ -27,25 +27,10 @@ netcomi_graph_analysis <- function(
   BIO_COLORS = c("Low Bioactive" = "#619CFF", "High Bioactive" = "#00BA38")
 
   #### MAKE NETWORKS ####
-  # These are preconstructed by SPIEC-EASI. To get to an association matrix, 
-  # we want to have the estimated correlation, for any edges which are inferred
-  # to be related. From the NetCoMi code, they derive this association matrix
-  # as getOptNet * cov2cor - so edges not in the network are 0, others weighted
-  # with their correlation. We do the same when converting to igraph, but just
-  # use correlation as an edge property.
+  # These are preconstructed by SPIEC-EASI and have been converted to 
+  # association matrices (see se_to_associations).
   association_matrices <- setNames(
-    lapply(
-      list(hb_se, lb_se),
-      function(x) {
-        se_net <- x
-        cor <- stats::cov2cor(as.matrix(getOptCov(se_net)))
-        ass_mat <- as.matrix(cor * SpiecEasi::getRefit(se_net))
-        diag(ass_mat) <- 1
-        colnames(ass_mat) <- colnames(se_net$est$data)
-        rownames(ass_mat) <- colnames(se_net$est$data)
-        return(ass_mat)
-      }
-    ),
+    list(hb_ass, lb_ass),
     LABELS_NETWORK
   )
 
@@ -316,4 +301,15 @@ check_neighbourhood_consistency <- function(#
    arrange(
     -count
    )
+}
+
+se_to_association <- function(se_net) {
+  # Utility to convert SpiecEasi results to an association matrix for NetCoMi
+  # SpiecEasi result objects are very large and not included in the repo
+  cor <- stats::cov2cor(as.matrix(getOptCov(se_net)))
+  ass_mat <- as.matrix(cor * SpiecEasi::getRefit(se_net))
+  diag(ass_mat) <- 1
+  colnames(ass_mat) <- colnames(se_net$est$data)
+  rownames(ass_mat) <- colnames(se_net$est$data)
+  return(ass_mat)
 }

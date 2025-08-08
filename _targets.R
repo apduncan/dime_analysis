@@ -13,7 +13,6 @@ tar_option_set(
   )
 )
 
-# Run the R scripts in the R/ folder with your custom functions:
 tar_source()
 
 # Target list
@@ -500,12 +499,6 @@ list(
     )
   ),
 
-  # Food & nutrient
-  tar_target(
-    lst_food_freqs,
-    food_group_frequency(tbl_food_groups, FOOD_GROUPS)
-  ),
-
   # ==== CALCULATE FOOD AND METABOLITE DISSIMILARITIES ====
   tar_target(
     dst_urine,
@@ -530,27 +523,6 @@ list(
 
 
   # ==== ANALYSIS FOOD AND METABOLITES ====
-  tar_target(
-    tbl_food_metab_corr_hb,
-    metabolite_food_correlation(
-      tbl_metab_peaks,
-      tbl_metab_ttest,
-      tbl_metab_annotations,
-      lst_food_freqs,
-      "High Bioactive"
-    )
-  ),
-  tar_target(
-    plt_food_metabolite_corr_hb,
-    plot_metabolite_food_correlation(
-      tbl_food_metab_corr_hb,
-      0.05,
-      fontsize_row = 6,
-      fontsize_col = 6,
-      fontsize = 6,
-      fontsize_number = 4
-    )
-  ),
   tar_target(
     lst_scfa_correlation,
     scfa_bioactive_correlation(
@@ -613,8 +585,7 @@ list(
     paper_figure_three(
       plt_volcano = plt_metab_volcano_revised_ident,
       plt_scfa_box = plt_scfa_box,
-      plt_scfa_correlation = plt_scfa_correlation,
-      plt_um_correlations = plt_food_metabolite_corr_hb
+      plt_scfa_correlation = plt_scfa_correlation
     )
   ),
   tar_target(
@@ -669,12 +640,14 @@ list(
   ),
 
   # ==== ANALYSIF OF NETWORKS ====
+  # Association matrices
   tar_file_read(
-    net_lb_se, "data/derived/networks/after_low.Rds", readRDS(!!.x)
+    net_hb_ass, "data/derived/networks/after_high.association.Rds", readRDS(!!.x)
   ),
   tar_file_read(
-    net_hb_se, "data/derived/networks/after_high.Rds", readRDS(!!.x)
+    net_lb_ass, "data/derived/networks/after_low.association.Rds", readRDS(!!.x)
   ),
+  # Igraph objects
   tar_file_read(
     net_lb_ig, "data/derived/networks/after_low.igraph.Rds", readRDS(!!.x)
   ),
@@ -689,8 +662,8 @@ list(
   tar_target(
     obj_net_an,
     netcomi_graph_analysis(
-      hb_se = net_hb_se,
-      lb_se = net_lb_se,
+      hb_ass = net_hb_ass,
+      lb_ass = net_lb_ass,
       fun_md = net_tbl_pfam_md,
       metab_md = tbl_metab_annotations,
       metab_ttest = tbl_metab_ttest,
