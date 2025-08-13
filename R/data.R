@@ -363,10 +363,13 @@ substrate_difference <- function(
     pull(Substrate) |>
     unique() |>
     sort()
+  # Manually perform adjustment at stat_compare_means does not do this
+  # across facets
+  tests$p.adj.manual <- p.adjust(tests$p, method = "BH")
   sig_tests <- tests |>
     filter(p <= 0.05)
   
-  plt_sig_substrate <- substrate_counts |>
+  filtered_substrate_counts <- substrate_counts |>
     filter(Substrate %in% keep_substrates) |>
     # For now manually filter those with all single copy
     filter(!(Substrate %in%
@@ -381,7 +384,21 @@ substrate_difference <- function(
         "Low Bioactive",
         "High Bioactive"
       )
+    )
+  
+  sig_tests_use <- sig_tests |>
+    left_join(
+      filtered_substrate_counts |>
+      group_by(Substrate) |>
+      summarise(label_pos = max(substrate_enzymes) * 1.05),
+      join_by(substrate == Substrate),
     ) |>
+    mutate(
+      Substrate = substrate,
+      p.adj.format = glue("q={round(p.adj.manual, 2)}, p={round(p, 2)}")
+    )
+  
+  plt_sig_substrate <- filtered_substrate_counts |>
     ggplot(
       aes(
         x = factor(association),
@@ -397,13 +414,24 @@ substrate_difference <- function(
       ncol = 8,
       labeller = labeller(Substrate = label_wrap_gen(18))
     ) +
-    ggpubr::stat_compare_means(
-      label = "p.format",
-      label.x.npc = "centre",
-      label.y.npc = "top",
-      show.legend = FALSE
+    # ggpubr::stat_compare_means(
+    #   label = "p.format",
+    #   label.x.npc = "centre",
+    #   label.y.npc = "top",
+    #   show.legend = FALSE
+    # ) +
+    geom_text(
+      data = sig_tests_use,
+      aes(
+        x = "Low Bioactive",
+        y = label_pos,
+        label = p.adj.format,
+        color = "black",
+        fill = "black"
+      ),
+      color = "black"
     ) +
-    scale_y_continuous(expand = expansion(mult = c(0.05, 0.3))) +
+    scale_y_continuous(expand = expansion(mult = c(0.05, 0.08))) +
     scale_x_discrete(limits = c("None", "Low Bioactive", "High Bioactive")) +
     scale_fill_manual(
       values = c(

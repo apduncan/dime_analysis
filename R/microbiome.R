@@ -961,3 +961,67 @@ paper_figure_two_alternate <- function(
     THEME_DIME
   )
 }
+
+summarise_alpha_div <- function(
+  lst_species_alpha,
+  tbl_sample_metadata
+) {
+  tbl_alpha <- lst_species_alpha$alpha_diversity |>
+    rownames_to_column("sample_id") |>
+    left_join(tbl_sample_metadata, join_by(sample_id)) |>
+    mutate(diet = ifelse(time_point == "V1", "Baseline", sample_arm)) |>
+    filter(diet %in% c("after_high", "after_low", "Baseline")) |>
+    group_by(diet) |>
+    summarise(
+      mean_shannon = mean(shannon),
+      mean_richness = mean(richness),
+      mean_inv_simpson = mean(inv_simp),
+      mean_pielou = mean(pielou)
+    )
+  return(tbl_alpha)
+}
+
+summarise_beta_within <- function(
+  dst,
+  tbl_sample_metadata
+) {
+  bc_dis <- dst
+  sample_md <- tbl_sample_metadata
+
+  # Convert to long form
+  bd_long <- bc_dis %>%
+    as.matrix() %>%
+    (\(x) {
+      x[lower.tri(x, diag = FALSE)] <- NA
+      return(x)
+      }
+    ) %>% as.data.frame() %>%
+    rownames_to_column("a") %>%
+    pivot_longer(!a, values_to = "bc_dist", names_to = "b") %>%
+    filter(!is.na(bc_dist))
+
+  # Select only the samples which are in the same arm
+  bd_within_arm <- bd_long %>%
+    # Remove the diagonal
+    filter(a != b) %>%
+    left_join(sample_md %>% dplyr::select(sample_id, sample_arm), 
+              by = join_by(a == sample_id)) %>%
+    rename(arm_a = sample_arm) %>%
+    left_join(sample_md %>% dplyr::select(sample_id, sample_arm), 
+              by = join_by(b == sample_id)) %>%
+    rename(arm_b = sample_arm) %>%
+    # Label any V1 samples as baseline
+    mutate(arm_a = ifelse(grepl("V1", a), "baseline", arm_a),
+          arm_b = ifelse(grepl("V1", b), "baseline", arm_b)) %>%
+    # Only within the same arm, and remove diagonal
+    filter(arm_a == arm_b & a != b)
+
+  # Plot the beta diversity distributions for baseline, high, and low diets
+  # Remove any before_ samples which are not at timepoint V1
+  fig2_data <- bd_within_arm %>%
+    mutate(Diet = arm_a |> map_chr(arm_to_diet)) %>%
+    filter(!is.na(Diet)) %>%
+    mutate(Diet = ifelse(Diet == "Baseline", "Non-Intervention", Diet))
+
+  fig2_data |> group_by(Diet) |> summarise(mean = mean(bc_dist))
+}

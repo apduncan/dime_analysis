@@ -19,6 +19,7 @@ BIO_TEXT_COLOR <- setNames(
 )
 
 FIGURE_DIR <- c("output", "figures")
+TABLE_DIR <- c("output", "tables")
 
 write_figure <- function(
   plt,
@@ -41,5 +42,25 @@ write_figure <- function(
     print(full_pth)
     ggsave(full_pth, plt, create.dir = TRUE, dpi = 300, ...)
   }
+  return(full_pth)
+}
+
+write_table <- function(
+  tbl,
+  pth,
+  ...
+) {
+  #' Write a table in TSV format
+  #'
+  #' @param tbl Table in tibble format (no rownames)
+  #' @param pth Path to save table, without extention
+  #' @returns Path to TSV version of table
+  full_pth <- do.call(file.path, as.list(c(TABLE_DIR, glue("{pth}.tsv"))))
+  write_delim(
+    tbl,
+    full_pth,
+    delim = "\t",
+    ...
+  )
   return(full_pth)
 }

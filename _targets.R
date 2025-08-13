@@ -299,6 +299,20 @@ list(
       scale = 1
     )
   ),
+  tar_target(
+    tbl_summarise_ad,
+    summarise_alpha_div(
+      lst_species_alpha,
+      tbl_sample_metadata
+    )
+  ),
+  tar_target(
+    pth_summarise_ad,
+    write_table(
+      tbl_summarise_ad,
+      "summarise_alpha_diversity"
+    )
+  ),
 
   # Beta diversity
   tar_target(
@@ -314,6 +328,20 @@ list(
     substrate_difference(
       lst_dbcan$counts_long,
       tbl_mgs_association
+    )
+  ),
+  tar_target(
+    tbl_summarise_bd,
+    summarise_beta_within(
+      dst_rare_scaled_species,
+      tbl_sample_metadata
+    )
+  ),
+  tar_target(
+    pth_summarise_bd,
+    write_table(
+      tbl_summarise_bd,
+      "summarise_beta_diversity"
     )
   ),
 
@@ -639,7 +667,7 @@ list(
     )
   ),
 
-  # ==== ANALYSIF OF NETWORKS ====
+  # ==== ANALYSIS OF NETWORKS ====
   # Association matrices
   tar_file_read(
     net_hb_ass, "data/derived/networks/after_high.association.Rds", readRDS(!!.x)
@@ -672,7 +700,6 @@ list(
     )
   ),
 
-  # ==== ANALYSIS OF NETWORKS ====
   # List of metabolites for further investigation
   tar_target(
     tbl_taxa_corr,
