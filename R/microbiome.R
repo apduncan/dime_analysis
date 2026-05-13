@@ -1024,3 +1024,15 @@ summarise_beta_within <- function(
 
   fig2_data |> group_by(Diet) |> summarise(mean = mean(bc_dist))
 }
+
+#' Linear model for difference in alpha diversity between groups
+lm_alpha_div <- function(
+  tbl_alpha_div,
+  tbl_sample_metadata,
+  measure = "richness"
+) {
+  # Restrict to only post intervention points
+
+  # Consider effect of the intervention and the seuqence
+  lmer(richess ~ diet + sequence + diet:sequence + (1|participant))
+}

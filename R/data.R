@@ -476,3 +476,25 @@ substrate_difference <- function(
 
   return(list(all = plt_substrate, sig = plt_sig_substrate))
 }
+
+#' Clean and add matching sample identifiers for each sample
+#'
+#' @param tbl_bioactives_unadjusted Bioactives before adjustment as tibble
+#' @returns Tibble with bioactive columns, and sample_id
+clean_unadjusted_bioactives <- function(
+  tbl_bioactives_unadjusted
+) {
+  tbl_cleaned <- tbl_bioactives_unadjusted |>
+    mutate(
+      participant_id = Participants |>
+        str_sub(-2, -1) |>
+        str_replace("O", "0"),
+      sample_id = paste0(participant_id, "-", time_point)
+    ) |>
+    relocate(sample_id, participant_id) |>
+    # Select down to only bioactive columns
+    select(sample_id, Lignans:NEPP) |>
+    # Rename a typoed bioactive
+    rename(Capsaicinoids = Capasicosoids)
+  return(tbl_cleaned)
+}

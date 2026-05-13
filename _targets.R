@@ -174,6 +174,15 @@ list(
       pth_diet_nutrients
     )
   ),
+  tar_file_read(
+    tbl_bioactives_unadjusted,
+    file.path("data", "source", "diet", "bioactive_diet.tsv"),
+    read_delim(file = !!.x)
+  ),
+  tar_target(
+    tbl_bioactives_unadjusted_clean,
+    clean_unadjusted_bioactives(tbl_bioactives_unadjusted)
+  ),
 
   # ==== READ MICROBIOME ====
   # Microbiome

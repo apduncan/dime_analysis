@@ -155,3 +155,240 @@ distance_nutrient <- function(
     scale() |>
     vegdist(method = "euclidean")
 }
+
+bioactive_summary <- function(
+  mat_bioactive,
+  bioactive_unadjusted,
+  tbl_sample_metadata
+) {
+  #' Calculate some summary statistics for bioactives
+
+  # Mean intake of every bioactive in each arm - reidual adjusted
+  long_bioactive <- mat_bioactive |>
+    as.data.frame() |>
+    rownames_to_column("bioactive") |>
+    pivot_longer(
+      -bioactive,
+      names_to = "sample",
+      values_to = "value"
+    ) |>
+    dplyr::left_join(
+      tbl_sample_metadata,
+      join_by(sample == sample_id)
+    )
+  bioactive_arm_mean <- long_bioactive |>
+    group_by(
+      bioactive, sample_arm
+    ) |>
+    summarise(
+      mean = mean(value)
+    )
+
+  # Count number of participants whose intake is higher in HB
+  hb_inc <- long_bioactive |>
+    filter(time_point %in% c("V1", "V2", "V4")) |>
+    mutate(diet = map_chr(sample_arm, \(x) arm_to_diet(x))) |>
+    select(bioactive, participant, diet, value) |>
+    pivot_wider(
+      id_cols = c(participant, bioactive),
+      names_from = diet,
+      values_from = value
+    ) |>
+    mutate(
+      HB_LB = `High Bioactive` - `Low Bioactive`,
+      HB_increase = HB_LB > 0
+    )
+  hb_inc_bioactive <- hb_inc |>
+    group_by(bioactive) |>
+    summarise(
+      n_increased = sum(HB_increase),
+      mean_increase = mean(HB_LB)
+    ) |>
+    arrange(mean_increase)
+  hb_inc_participant <- hb_inc |>
+    group_by(participant) |>
+    summarise(n_increased = sum(HB_increase)) |>
+    arrange(n_increased)
+
+  # Summarise change per individual LB-HB, BLN-HB, BLN-LB
+  # To make change ratio calculation simpler, use unadjusted values
+  long_unadjusted <- bioactive_unadjusted |>
+    pivot_longer(
+      -sample_id,
+      names_to = "bioactive",
+      values_to = "value"
+    ) |>
+    dplyr::left_join(
+      tbl_sample_metadata,
+      join_by(sample_id == sample_id)
+    )
+  log2fc_bioactives <- long_unadjusted |>
+    filter(time_point %in% c("V1", "V2", "V4")) |>
+    mutate(diet = map_chr(sample_arm, \(x) arm_to_diet(x))) |>
+    # Where residual adjusted value is negative, treat this as 0 for LFC
+    filter(diet %in% c("High Bioactive", "Low Bioactive", "Baseline")) |>
+    pivot_wider(
+      names_from = diet,
+      values_from = value,
+      id_cols = c(bioactive, participant)
+    ) |>
+    mutate(
+      HB_LB = log2(`High Bioactive` / `Low Bioactive`),
+      HB_LB = replace(HB_LB, is.infinite(HB_LB), NA),
+      HB_BLN = log2(`High Bioactive` / `Baseline`),
+      HB_BLN = replace(HB_BLN, is.infinite(HB_BLN), NA),
+      LB_BLN = log2(`Low Bioactive` / Baseline),
+      LB_BLN = replace(LB_BLN, is.infinite(LB_BLN), NA)
+    )
+
+  limit <- max(abs(log2fc_bioactives$HB_LB), na.rm = TRUE) * c(-1, 1)
+  # Order bioactives by mean Log2FC
+  hblb_order <- log2fc_bioactives |>
+    group_by(bioactive) |>
+    summarise(mean = mean(HB_LB, na.rm = TRUE)) |>
+    arrange(mean) |>
+    pull(bioactive)
+  plt_hblb_log2fc <- log2fc_bioactives |>
+    filter(!is.na(HB_LB)) |>
+    mutate(
+      raised_in = ifelse(HB_LB > 0, "High Bioactive", "Low Bioactive"),
+      bioactive = fct_relevel(bioactive, hblb_order)
+    ) |>
+    ggplot() +
+    geom_line(
+      aes(x=bioactive, y=HB_LB, group=participant),
+      color="grey", size=0.1
+    ) +
+    geom_point(
+      aes(y=HB_LB, x=bioactive, color=raised_in)
+    ) +
+    scale_color_manual(
+        name="Increased In",
+        values=BIOACTIVE_COLORS
+    ) +
+    coord_flip() +
+    ylab("Log2 Fold Change (HB/LB)") +
+    xlab("Bioactive") +
+    THEME_DIME +
+    theme(legend.position = "bottom")
+
+  plt_hbbln_log2fc <- log2fc_bioactives |>
+    filter(!is.na(HB_BLN)) |>
+    mutate(
+      raised_in = ifelse(HB_BLN > 0, "High Bioactive", "Baseline"),
+      bioactive = fct_relevel(bioactive, hblb_order)
+    ) |>
+    ggplot() +
+    geom_line(
+      aes(x=bioactive, y=HB_BLN, group=participant),
+      color="grey", size=0.1
+    ) +
+    geom_point(
+      aes(y=HB_BLN, x=bioactive, color=raised_in)
+    ) +
+    scale_color_manual(
+        name="Increased In",
+        values=BIOACTIVE_COLORS3
+    ) +
+    coord_flip() +
+    ylab("Log2 Fold Change (HB/BLN)") +
+    xlab("Bioactive") +
+    THEME_DIME +
+    theme(legend.position = "bottom")
+
+  plt_lbbln_log2fc <- log2fc_bioactives |>
+    filter(!is.na(LB_BLN)) |>
+    mutate(
+      raised_in = ifelse(LB_BLN > 0, "Low Bioactive", "Baseline"),
+      bioactive = fct_relevel(bioactive, hblb_order)
+    ) |>
+    ggplot() +
+    geom_line(
+      aes(x=bioactive, y=LB_BLN, group=participant),
+      color="grey", size=0.1
+    ) +
+    geom_point(
+      aes(y=LB_BLN, x=bioactive, color=raised_in)
+    ) +
+    scale_color_manual(
+        name="Increased In",
+        values=BIOACTIVE_COLORS3
+    ) +
+    coord_flip() +
+    ylab("Log2 Fold Change (LB/BLN)") +
+    xlab("Bioactive") +
+    THEME_DIME +
+    theme(legend.position = "bottom")
+
+  return(list(
+    plots=list(
+      log2fc_hb_lb = plt_hblb_log2fc,
+      log2fc_hb_bln = plt_hbbln_log2fc,
+      log2fc_lb_bln = plt_lbbln_log2fc,
+      log2fc_combined = plt_hblb_log2fc + plt_hbbln_log2fc + plt_lbbln_log2fc
+    ),
+    adjusted_arm_mean = bioactive_arm_mean
+  ))
+}
+
+#' Perform PCA on nutrient or bioactive adjusted compositions.
+#' The purpose of this is to provide a multivariate look at separation of
+#' baseline, low, and high bioactive diets.
+diet_ordination <- function(
+  diet_composition_adj,
+  tbl_sample_metdata
+) {
+  #' Participant 09 is removed from comparison of dietary data
+  #' The diet based on their diaries is highly dissimilar to others, but their
+  #' microbiome and other values appear normal - we suspect this is due to
+  #' issues with dietary recording.
+  tbl_filtered <- diet_composition_adj[
+    , !grepl("09", colnames(diet_composition_adj))] |>
+    t()
+
+  #' Version of the table with metadata attached
+  tbl_filtered_md <- tbl_filtered |>
+    as.data.frame() |>
+    rownames_to_column("sample_id") |>
+    left_join(tbl_sample_metadata, by = "sample_id")
+
+  # PCA and extract results
+  pca_res <- prcomp(tbl_filtered, scale. = TRUE, center = TRUE)
+  pca_sum <- summary(pca_res)
+  pca_vexp <- scales::percent(pca_sum$importance[2, 1:2], accuracy = 0.1)
+  pca_df <- data.frame(pca_res$x[ ,1:3]) |>
+    rownames_to_column("sample_id") |>
+    left_join(tbl_sample_metadata, by = "sample_id") |>
+    mutate(Diet = sample_arm |> map_chr(arm_to_diet))
+
+  # Make styled figure
+  fig <- ggplot(pca_df, aes(x = PC1, y = PC2, color = Diet)) +
+    scale_color_manual(
+      values = c("High Bioactive" = BIOACTIVE_COLORS3[1] |> unname(),
+                "Low Bioactive" = BIOACTIVE_COLORS3[2] |> unname(),
+                "Baseline" = BIOACTIVE_COLORS3[3] |> unname())
+    ) +
+    stat_ellipse() + 
+    geom_line(data = pca_df %>% filter(Diet %in% c("High Bioactive", "Baseline")), 
+              mapping = aes(x = PC1,
+                            y = PC2,
+                            color = Diet,
+                            group = participant),
+              color = BIOACTIVE_COLORS3[1],
+              linewidth = 0.15) +
+    geom_line(data = pca_df %>% filter(Diet %in% c("Low Bioactive", "Baseline")), 
+              mapping = aes(x = PC1,
+                            y = PC2,
+                            color = Diet,
+                            group = participant),
+              color = BIOACTIVE_COLORS3[2],
+              linewidth = 0.15) +
+    geom_point() +
+    xlab(glue("PC1 ({pca_vexp[1]})")) +
+    ylab(glue("PC2 ({pca_vexp[2]})")) +
+    # ggtitle("PCA of Bioactive Intake") +
+    theme_minimal() +
+    theme(legend.position = "bottom",
+          axis.text.x = element_blank(),
+          axis.text.y = element_blank())
+}
