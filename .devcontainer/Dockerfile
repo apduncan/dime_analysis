@@ -16,13 +16,36 @@ RUN R -e 'BiocManager::install(ask = FALSE)' && \
     ), ask = FALSE)'
 RUN R -e 'install.packages("littler", repos="https://cran.r-project.org")'
 
+# Challenging installs of NetCoMi and SpiecEasi
+RUN R -e 'BiocManager::install("SpiecEasi")'
+RUN install2.r --error \
+    devtools \
+    remotes
+RUN R -e 'pak::pak("GraceYoon/SPRING")'
+RUN R -e 'devtools::install_github("stefpeschel/NetCoMi", \
+repos = c("https://cloud.r-project.org/", \
+BiocManager::repositories()))'
+
 # Install anything possible from CRAN
 RUN install2.r --error \
     targets \
     vegan \
     quarto \
     tarchetypes \
-    devtools
+    devtools \
+    patchwork \
+    readxl \
+    ggrepel \
+    ggpubr \
+    pheatmap \
+    ggplotify \
+    usedist \
+    reticulate \
+    lsa \
+    rtk \
+    logger
+    # openxslx \
+    # colorpsace
 
 # Install anything needed which has been removed from CRAN or needs a pinned
 # version in the Dockerfile
@@ -34,3 +57,5 @@ RUN install2.r --error --repos https://p3m.dev/cran/__linux__/noble/latest \
     languageserver && \
     install2.r --error --repos https://manuelhentschel.r-universe.dev \
     vscDebugger
+
+RUN install2.r --error tidyverse
