@@ -1,5 +1,9 @@
 FROM bioconductor/bioconductor_docker:latest
 # Required libraries
+
+LABEL org.opencontainers.image.source=https://github.com/apduncan/dime_analysis
+LABEL org.opencontainers.image.description="DIME analysis"
+
 RUN apt update && apt install -y \
     libglpk-dev 
 
@@ -51,7 +55,9 @@ RUN install2.r --error \
 # Install anything needed which has been removed from CRAN or needs a pinned
 # version in the Dockerfile
 RUN R -e 'library(devtools);\
-    install_version("httpgd", version="2.0.2", ask = FALSE)'
+    install_version("httpgd", version="2.0.2", ask = FALSE);\
+    pak::pak("ycphs/openxlsx");\
+    install.packages("colorspace", repos = "https://R-Forge.R-project.org");'
 
 # Install some packages from custom repos, often need for VSCode extentions
 RUN install2.r --error --repos https://p3m.dev/cran/__linux__/noble/latest \

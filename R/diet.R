@@ -163,7 +163,7 @@ bioactive_summary <- function(
 ) {
   #' Calculate some summary statistics for bioactives
 
-  # Mean intake of every bioactive in each arm - reidual adjusted
+  # Mean intake of every bioactive in each arm - residual adjusted
   long_bioactive <- mat_bioactive |>
     as.data.frame() |>
     rownames_to_column("bioactive") |>
@@ -175,6 +175,10 @@ bioactive_summary <- function(
     dplyr::left_join(
       tbl_sample_metadata,
       join_by(sample == sample_id)
+    ) |>
+    # Remove participant 09 due to unusual dietary reports
+    filter(
+      participant != "09"
     )
   bioactive_arm_mean <- long_bioactive |>
     group_by(
@@ -221,6 +225,10 @@ bioactive_summary <- function(
     dplyr::left_join(
       tbl_sample_metadata,
       join_by(sample_id == sample_id)
+    ) |>
+    # Filter participant 09 due to unusual dietary reports
+    filter(
+      participant != "09"
     )
   log2fc_bioactives <- long_unadjusted |>
     filter(time_point %in% c("V1", "V2", "V4")) |>
@@ -336,7 +344,7 @@ bioactive_summary <- function(
 #' baseline, low, and high bioactive diets.
 diet_ordination <- function(
   diet_composition_adj,
-  tbl_sample_metdata
+  tbl_sample_metadata
 ) {
   #' Participant 09 is removed from comparison of dietary data
   #' The diet based on their diaries is highly dissimilar to others, but their
@@ -391,4 +399,183 @@ diet_ordination <- function(
     theme(legend.position = "bottom",
           axis.text.x = element_blank(),
           axis.text.y = element_blank())
+
+  return(
+    list(
+      figure=fig,
+      pca=pca_res,
+      pca_summary=pca_sum,
+      data=tbl_filtered
+    )
+  )
+}
+
+# Stacked bar of mean biaoctive intake between arms, and intake per participant
+bioactive_bar <- function(
+  bioactive_unadjusted,
+  tbl_sample_metadata
+) {
+  long_bioactive <- bioactive_unadjusted |>
+    left_join(tbl_sample_metadata, by = "sample_id") |>
+    mutate(diet = sample_arm |> map_chr(arm_to_diet)) |>
+    select(sample_id, Lignans:NEPP, diet, participant) |>
+    # Exclude participant 09
+    filter(participant != "09") |>
+    # Fix some typos in table
+    rename(`Cinnamic acid` = `Cinnaimc acid`) |>
+    pivot_longer(Lignans:NEPP, names_to = "bioactive", values_to = "intake")
+
+  # Mean intake for all arm (HB, LB, BLN)
+  mean_per_bioactive <- long_bioactive |>
+  group_by(diet, bioactive) |>
+  summarise(mean = mean(intake),
+            sd = sd(intake))
+
+  # Mean total intake
+  mean_total_intake <- long_bioactive |>
+    group_by(diet, participant) |>
+    summarise(sum = sum(intake)) |>
+    group_by(diet) |>
+    summarise(mean = mean(sum),
+              sd = sd(sum))
+
+  # Plot intake
+  # Pick out the 8 most abundant categories, and group the rest under other
+  n <- 8
+  top_n <- (long_bioactive |>
+    group_by(bioactive) |>
+    summarise(mean = mean(intake)) |>
+    arrange(desc(mean)))$bioactive[1:8]
+
+  fig_bioactive_stack <- long_bioactive |>
+    mutate(
+      bioactive_limit = ifelse(bioactive %in% top_n, bioactive, "Other")) |>
+    mutate(
+      bioactive_limit = fct_relevel(bioactive_limit, c(top_n, "Other"))) |>
+    group_by(diet, bioactive_limit) |>
+    summarise(intake = mean(intake)) |>
+    ggplot() +
+    geom_col(aes(x = diet, y = intake, fill = bioactive_limit)) +
+    scale_x_discrete(
+      labels = c(
+        low = "Low",
+        high = "High",
+        baseline = "Baseline"
+      ),
+      limits = c("Baseline", "Low Bioactive", "High Bioactive")
+    ) +
+    scale_fill_manual(
+      values = as.vector(alphabet(n + 1)),
+      limits = c(top_n, "Other")
+    ) +
+    ylab("Mean daily intake (mg)") +
+    xlab(NULL) +
+    theme_minimal() +
+    theme(legend.position = "bottom",
+          legend.title = element_blank()) +
+    ggtitle("Bioactive Intake") +
+    guides(fill = guide_legend(nrow = 3))
+
+  # Individual plots for supplementary
+  # Include participant 09 in these
+  fig_ind_stack <- bioactive_unadjusted |>
+    left_join(tbl_sample_metadata, by = "sample_id") |>
+    mutate(diet = sample_arm |> map_chr(arm_to_diet)) |>
+    select(sample_id, Lignans:NEPP, diet, participant) |>
+    # Fix some typos in table
+    rename(`Cinnamic acid` = `Cinnaimc acid`) |>
+    pivot_longer(Lignans:NEPP, names_to = "bioactive", values_to = "intake") |>
+    mutate(
+      bioactive_limit = ifelse(bioactive %in% top_n, bioactive, "Other")) |>
+    mutate(
+      bioactive_limit = fct_relevel(bioactive_limit, c(top_n, "Other"))) |>
+    group_by(diet, bioactive_limit, participant) |>
+    # summarise(intake = mean(intake)) |>
+    ggplot() +
+    geom_col(aes(x = diet, y = intake, fill = bioactive_limit)) +
+    facet_wrap(~participant) +
+    scale_x_discrete(
+      labels = c(
+        low = "Low",
+        high = "High",
+        baseline = "Baseline"
+      ),
+      limits = c("Baseline", "Low Bioactive", "High Bioactive")
+    ) +
+    scale_fill_manual(
+      values = as.vector(alphabet(n + 1)),
+      limits = c(top_n, "Other")
+    ) +
+    ylab("Mean daily intake (mg)") +
+    xlab(NULL) +
+    theme_minimal() +
+    theme(legend.position = "bottom",
+          legend.title = element_blank(),
+          axis.text.x = element_text(angle=90)
+          ) +
+    ggtitle("Bioactive Intake") +
+    guides(fill = guide_legend(nrow = 3))
+  
+  return(list(
+    plots = list(
+      stack = fig_bioactive_stack,
+      individual_stack = fig_ind_stack
+    ),
+    data = long_bioactive,
+    mean_per_bioactive = mean_per_bioactive,
+    mean_total_intake = mean_total_intake
+  ))
+}
+
+paper_figure_one <- function(
+  plt_bioactive_mean_intake,
+  plt_bioactive_log2fc,
+  plt_bioactive_pca,
+  plt_nutrient_pca,
+  loc_study_design
+) {
+  layout <- "ABCD"
+  fig1_diet <- (plt_bioactive_mean_intake + 
+     guides(fill = guide_legend(
+      #  label.theme = element_text(size = rel(6.5)),
+       nrow = 3,
+       title = NULL,
+       keywidth = unit(6, "pt"),
+       keyheight = unit(3, "pt")
+      )) +
+     theme(legend.box.margin = margin(0, 0, 0, 0),
+           legend.margin = margin(0, 0, 0, 0)
+          #  axis.text.x = element_text(size = rel(0.6))
+      )
+  ) +
+  # Per participant Log2FC
+  (
+    plt_bioactive_log2fc +
+      theme(
+        panel.spacing.y = unit(0, "cm"),
+        axis.text.y = element_text(size = rel(0.6)),
+        strip.text = element_text(size = rel(0.5))
+      ) +
+      guides(
+        color = guide_legend(nrow = 2)
+      )
+  ) +
+  # PCAs
+  (
+    plt_bioactive_pca +
+      ggtitle("Bioactives")
+  ) +
+  (
+    plt_nutrient_pca +
+      ggtitle("Nutrients") +
+      guides(colour = FALSE)
+  ) +
+  # Layout and annotations
+  plot_layout(guides = "keep", design = layout, widths = c(1, 1, 2, 2)) + 
+  plot_annotation(tag_levels = list(c("B", "C", "D", "E"))) &
+  theme(legend.position = "bottom",
+        legend.text = element_text(size = rel(0.7)),
+        title = element_text(size = rel(0.7))
+        )
+  return(fig1_diet)
 }

@@ -9,7 +9,7 @@ tar_option_set(
     "ggrepel", "ggpubr", "pheatmap", "ggplotify", "patchwork",
     "usedist", "reticulate", "lsa", "rtk", "logger", "openxlsx",
     "colorspace", "igraph", "data.table", "igraph", "SpiecEasi", "NetCoMi",
-    "tidyverse", "tools"
+    "tidyverse", "tools", "pals"
   )
 )
 
@@ -230,6 +230,37 @@ list(
         data.frame(check.names = FALSE) |>
         rownames_to_column("species"),
       tbl_cell_count
+    )
+  ),
+
+  # ==== ANALYSIS OF DIET COMPOSITION ====
+  tar_target(
+    lst_bioactive_pca,
+    diet_ordination(
+      lst_diet_composition$bioactive,
+      tbl_sample_metadata
+    )
+  ),
+  tar_target(
+    lst_nutrient_pca,
+    diet_ordination(
+      lst_diet_composition$nutrient,
+      tbl_sample_metadata
+    )
+  ),
+  tar_target(
+    lst_bioactive_summary,
+    bioactive_summary(
+      mat_bioactive = lst_diet_composition$bioactive,
+      bioactive_unadjusted = tbl_bioactives_unadjusted_clean,
+      tbl_sample_metadata = tbl_sample_metadata
+    )
+  ),
+  tar_target(
+    lst_bioactive_intakes,
+    bioactive_bar(
+      bioactive_unadjusted = tbl_bioactives_unadjusted_clean,
+      tbl_sample_metadata = tbl_sample_metadata
     )
   ),
 
@@ -615,6 +646,26 @@ list(
 
   
   # ==== PLOT MANUSCRIPT FIGURES ====
+  tar_target(
+    fig_one,
+    paper_figure_one(
+      plt_bioactive_mean_intake = lst_bioactive_intakes$plots$stack,
+      plt_bioactive_log2fc = lst_bioactive_summary$plots$log2fc_hb_lb,
+      plt_bioactive_pca = lst_bioactive_pca$figure,
+      plt_nutrient_pca = lst_nutrient_pca$figure,
+      loc_study_design = "dfa"
+    )
+  ),
+  tar_target(
+    pth_fig_one,
+    write_figure(
+      plt = fig_one,
+      pth = "figure_one",
+      width = 12.45,
+      height = 4.68,
+      scale = 1
+    )
+  ),
   tar_target(
     fig_two,
     paper_figure_two(
