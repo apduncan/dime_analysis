@@ -548,6 +548,7 @@ diet_dbrda <- function(
   
   # Selected down to just points of interest, for capscale need two tables
   # - abundance matrix, - metadata table
+  print("fff")
   es_dbrda$matrix <- es_dbrda$long_table |>
     select(sample_id, feature, rel_weight) |>
     pivot_wider(names_from = feature, values_from = rel_weight, id_cols = sample_id) |>
@@ -572,8 +573,7 @@ diet_dbrda <- function(
   es_dbrda$summary <- summary(es_dbrda$dbrda)
   
   # Make a plot of results
-  dbrda_dfs <- plot(es_dbrda$dbrda, scaling = 2, display = c("sites", "species", "bp"),
-                    tidy=TRUE)
+  dbrda_dfs <- scores(es_dbrda$dbrda, scaling = 2, display = c("sites", "species", "bp", "cn"))
   es_dbrda$tidy <- dbrda_dfs
   
   biplot_mult <- attr(dbrda_dfs$biplot, "arrow.mul")
@@ -602,7 +602,7 @@ diet_dbrda <- function(
                      color = diet), 
                     x = 0, y = 0)
   
-  es_dbrda$plot <- es_dbrda$summary$site |>
+  es_dbrda$plot <- dbrda_dfs$site |>
     as.data.frame() |>
     rownames_to_column("sample_id") |>
     left_join(es_dbrda$metadata) %>%
@@ -612,7 +612,7 @@ diet_dbrda <- function(
     stat_ellipse(aes(x = CAP1, y = CAP2, color = Diet))
   
   # Add any requested vectors - select by vector norm on the constrained axes
-  vector_length <- apply(es_dbrda$summary$species[,1:2],
+  vector_length <- apply(dbrda_dfs$species[,1:2],
         FUN = \(x) { sum(x^2) },
         MARGIN = 1)
   vector_order <- order(vector_length, decreasing = TRUE)
@@ -627,7 +627,7 @@ diet_dbrda <- function(
     centroid_vector <- es_dbrda$summary$centroids[centroid, 1:2]
     centroid_cosines[[centroid]] <- apply(
       es_dbrda$summary$species[, 1:2],
-      FUN = \(x) {cosine(x, centroid_vector)},
+      FUN = \(x) {lsa::cosine(x, centroid_vector)},
       MARGIN = 1
     )
   }
@@ -640,16 +640,16 @@ diet_dbrda <- function(
   for(bp_name in rownames(bp_df)) {
     bp_vector <- as.numeric(bp_df[bp_name, 1:2])
     biplot_cosines[[bp_name]] <- apply(
-      es_dbrda$summary$species[, 1:2],
-      FUN = \(x) {cosine(x, bp_vector)},
+      dbrda_dfs$species[, 1:2],
+      FUN = \(x) {lsa::cosine(x, bp_vector)},
       MARGIN = 1
     )
   }
   biplot_cosines$norm <- vector_length
   es_dbrda$biplot_cosines <- do.call(cbind, biplot_cosines) |> as.data.frame()
   
-  top_feats <- es_dbrda$summary$species[
-    vector_order[1:min(n_species_vectors, dim(es_dbrda$summary$species)[1])],
+  top_feats <- dbrda_dfs$species[
+    vector_order[1:min(n_species_vectors, dim(dbrda_dfs$species)[1])],
     1:2]
   es_dbrda$cap_vector_lengths <- centroid_cosine_df
   if(n_species_vectors > 0) {
@@ -661,7 +661,7 @@ diet_dbrda <- function(
   if(centroids) {
     # Add constraint group centroids
     es_dbrda$plot <- es_dbrda$plot +
-      geom_text(data = es_dbrda$summary$centroids |> 
+      geom_text(data = es_dbrda$tidy$centroids |> 
                    as.data.frame() |>
                    rownames_to_column("Diet") |>
                    mutate(Diet = gsub("Diet", "", Diet)),
