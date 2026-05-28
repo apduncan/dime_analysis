@@ -548,7 +548,6 @@ diet_dbrda <- function(
   
   # Selected down to just points of interest, for capscale need two tables
   # - abundance matrix, - metadata table
-  print("fff")
   es_dbrda$matrix <- es_dbrda$long_table |>
     select(sample_id, feature, rel_weight) |>
     pivot_wider(names_from = feature, values_from = rel_weight, id_cols = sample_id) |>
