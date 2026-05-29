@@ -46,12 +46,41 @@ Joining with `by = join_by(feature_id)`
 ✔ skipping targets (16 so far)...
 ▶ dispatched target fig_three
 ● completed target fig_three [0.095 seconds, 430.788 megabytes]
-▶ ended pipeline [3.488 minutes]> library(targets)
+▶ ended pipeline [3.488 minutes]
 > tar_load(fig_three)
+> fig_three
 ```
-Output will typical be produced in `/outputs/{figures|tables|models}`.
+Output will typically be produced in `/outputs/{figures|tables|models}`.
 
-### Run all
+#### Network targets
+Code is provided to generate networks in `R/network_construct.R`.
+However, the networks we generated and used for our results are distributed
+in the figshare repository, and are used for all figure generation. 
+
+To recreate networks, run
+```
+tar_make(vct_net_high_paths)
+tar_make(vct_net_low_paths)
+```
+
+This will make new networks in `output/network_rerun`, producing three `Rds`
+files for each network, and igraph format network, and association matrix,
+and the SPIEC-EASI output.
+These could be moved to `data/network` to use in plots, though be aware
+the netowrk plotting functions are quite specific to the bundled structures,
+so if for some reason you learn a quite different structure it may not
+be useful.
+
+Networks are built from a subset of PFAM and metabolites.
+Metabolites are those identified as significant using t-tests, and similarly
+we identify PFAMs siginificantly associated to diet using non-parametric
+tests, implemented in `network_prevalence_filter` in `R/network_construct.R`.
+To change the filtering, you can change the implementation of this function.
+
+To change parameters passed to SPIEC-EASI, edit the function `se_params` in
+`R/network_construct.R`.
+
+#### Run all
 To run the full pipeline, which will produce output figures and tables, run
 ```
 library(targets)
