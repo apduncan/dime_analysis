@@ -1,0 +1,10 @@
+services:
+  rstudio:
+    container_name: rstudio_dime_analysis
+    build: .
+    ports: 
+      - "8787:8787"
+    volumes:
+      - ../../:/workdir/
+    environment:
+      - PASSWORD=metagenomics_and_metabolomics

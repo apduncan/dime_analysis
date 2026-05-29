@@ -1,13 +1,15 @@
 FROM bioconductor/bioconductor_docker:latest
+WORKDIR /workdir/
+
 # Required libraries
 RUN apt update && apt install -y \
-    libglpk-dev 
+    libglpk-dev python3 python3-pip python3-dev 
 
 # Using bioconductor dockers, as standard install too time consuming
 # bioconductor based on rocker/rstudio, so missing some of the tidyverse
 # packages I like. Took the below from the rocker instal_tidyverse.sh
-ADD install_tidyverse.sh /tmp/
-RUN bash /tmp/install_tidyverse.sh
+# ADD install_tidyverse.sh /tmp/
+# RUN bash /tmp/install_tidyverse.sh
 
 # Bioconductor installs
 RUN R -e 'BiocManager::install(ask = FALSE)' && \
@@ -43,14 +45,15 @@ RUN install2.r --error \
     reticulate \
     lsa \
     rtk \
-    logger
-    # openxslx \
-    # colorpsace
+    logger \
+    openxlsx 
+    # colorspace
 
 # Install anything needed which has been removed from CRAN or needs a pinned
 # version in the Dockerfile
 RUN R -e 'library(devtools);\
     install_version("httpgd", version="2.0.2", ask = FALSE)'
+
 
 # Install some packages from custom repos, often need for VSCode extentions
 RUN install2.r --error --repos https://p3m.dev/cran/__linux__/noble/latest \
@@ -59,3 +62,7 @@ RUN install2.r --error --repos https://p3m.dev/cran/__linux__/noble/latest \
     vscDebugger
 
 RUN install2.r --error tidyverse
+
+# Create the environment and install cvanmf
+RUN python3 -m venv /opt/cvanmf_env && \
+    /opt/cvanmf_env/bin/pip install --no-cache-dir cvanmf
