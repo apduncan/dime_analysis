@@ -58,6 +58,14 @@ metabolite_dbrda <- function(
   mds_props_pc <- mds_props * 100
   diet_pval <- metab_permanova$`Pr(>F)`[[2]]
 
+  # Add scores to summary
+  met_scores <- scores(
+    metabo_rda,
+    scaling = 2,
+    display = c("sites", "species", "bp", "cn")
+  )
+  metabo_summary <- utils::modifyList(metabo_summary, met_scores)
+
   # Plotting
   df_met_dbrda <- metabo_summary$sites |>
     as.data.frame() |>
