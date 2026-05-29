@@ -6,11 +6,11 @@
 	// This use an image from the GitHub container repository by default
 	// To build a local image (maybe you want to customise or have different
 	// processor architecture), comment out image, and uncomment build element.
-	"image": "ghcr.io/apduncan/dime_analysis:latest",
-	// "build": {
-	// 	"context": ".",
-	// 	"dockerfile": "Dockerfile"
-	// },
+	// "image": "ghcr.io/apduncan/dime_analysis:latest",
+	"build": {
+		"context": ".",
+		"dockerfile": "Dockerfile"
+	},
 	"customizations": {
 		"vscode": {
 			"extensions": [
