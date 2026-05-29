@@ -51,6 +51,16 @@ list(
     read_metabolites(pth_metab_faeces) |>
     order_table(rownames = TRUE)
   ),
+  tar_target(
+    pth_metab_faeces_sig,
+    "data/derived/untargetted_metabolomics/um_sig_fecal.tsv",
+    format = "file"
+  ),
+  tar_target(
+    mat_metab_faeces_sig,
+    read_metabolites(pth_metab_faeces_sig) |>
+      order_table(rownames = TRUE)
+  ),
   # These are the results of statistical analysis carried out by George Savva
   # Code for this analysis is available in data/source/untargetted_metabolomics
   # as quarto markdown and knit versions.
@@ -364,6 +374,16 @@ list(
       seed = 9898
     )
   ),
+  # PFAM annotation (from eggnogMapper)
+  tar_target(
+    pth_pfam,
+    "data/source/microbiome/function/EM.PFAML0.tsv",
+    format = "file"
+  ),
+  tar_target(
+    tbl_pfam,
+    read_pfam(pth_pfam)
+  ),
 
   # ==== ANALYSIS OF FUNCTION DIVERSITY ====
   tar_target(
@@ -664,6 +684,80 @@ list(
       width = 6,
       height = 2 * (7 / 3),
       scale = 1.5
+    )
+  ),
+
+  # === GENERATE NETWORKS ===
+  #' Data is split into two dataframe, one for samples after the high bioactive
+  #' intervention, and another after the low bioactive intervention. Separate
+  #' networks are then learnt for each of these.
+  #'
+  #' Code for network construction is provided, but making the figures does
+  #' not depend on the outputs and it will not be run if you make any of the
+  #' figures. This is as the network construction is quite time consuming.
+  #' Instead, outputs saved as Rds are provided and used for the analysis.
+  #' However, you can use `tar_make(lst_se_outputs)` to rerun the process,
+  #' and `tar_make(pth_se_output)` to save these to disk. To use these new
+  #' results in downstream analyses, you would need to replace the distributed
+  #' results with these generated ones.
+
+  # Split and tidy data
+  tar_target(
+    lst_metab_split,
+    network_split_matrix(
+      mat = mat_metab_faeces_sig,
+      metadata = tbl_sample_metadata
+    )
+  ),
+  tar_target(
+    lst_pfam_split,
+    network_split_matrix(
+      mat = tbl_pfam |>
+        column_to_rownames("L0") |>
+        network_prevalence_filter(
+          prevalence = 0.2,
+          func_filt = TRUE,
+          sample_md = tbl_sample_metadata
+        ),
+      metadata = tbl_sample_metadata
+    )
+  ),
+  tar_target(
+    lst_se_params,
+    se_params()
+  ),
+  # Learn two networks
+  tar_target(
+    lst_net_high,
+    paired_network_se(
+      mat_a = lst_pfam_split$high,
+      mat_b = lst_metab_split$high,
+      se_params = lst_se_params
+    )
+  ),
+  tar_target(
+    lst_net_low,
+    paired_network_se(
+      mat_a = lst_pfam_split$low,
+      mat_b = lst_metab_split$low,
+      se_params = lst_se_params
+    )
+  ),
+  # Output to files
+  tar_target(
+    vct_net_high_pths,
+    network_write(
+      lst_net_high,
+      file.path("output/network_rerun"),
+      condition_name = "after_high"
+    )
+  ),
+  tar_target(
+    vct_net_low_pths,
+    network_write(
+      lst_net_low,
+      file.path("output/network_rerun"),
+      condition_name = "after_low"
     )
   ),
 

@@ -19,10 +19,13 @@ RUN R -e 'BiocManager::install(ask = FALSE)' && \
 RUN R -e 'install.packages("littler", repos="https://cran.r-project.org")'
 
 # Challenging installs of NetCoMi and SpiecEasi
-RUN R -e 'BiocManager::install("SpiecEasi")'
+# RUN R -e 'BiocManager::install("SpiecEasi")'
+# 28/05 - Bug in bioconductor verion preventing multicore pulsar, install
+# dev branch.
 RUN install2.r --error \
     devtools \
     remotes
+RUN R -e 'devtools::install_github("zdk123/SpiecEasi@devel")'
 RUN R -e 'pak::pak("GraceYoon/SPRING")'
 RUN R -e 'devtools::install_github("stefpeschel/NetCoMi", \
 repos = c("https://cloud.r-project.org/", \

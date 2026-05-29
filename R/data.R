@@ -115,6 +115,19 @@ read_ko <- function(
     select(-`PLATE-1-NC`)
 }
 
+read_pfam <- function(
+  pth_pfam
+) {
+  #' PFAM abundance
+  #'
+  #' PFAM abundance as a tibble (first col is PFAM)
+  #' @param pth_pfam Path to MG-TK format abundance
+  #' @returns PFAM abundance as a tibble, samples on columns
+  read_delim(pth_pfam) |>
+    filter(1 != "-1") |>
+    rename_all(toupper)
+}
+
 filter_unknown <- function(
   tbl
 ) {
