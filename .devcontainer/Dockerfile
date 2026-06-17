@@ -67,3 +67,8 @@ RUN install2.r --error --repos https://p3m.dev/cran/__linux__/noble/latest \
 
 RUN install2.r --error tidyverse
 RUN install2.r --error openxlsx
+
+# LM requirements
+RUN install2.r --error \
+    emmeans \
+    lmerTest

@@ -9,7 +9,7 @@ tar_option_set(
     "ggrepel", "ggpubr", "pheatmap", "ggplotify", "patchwork",
     "usedist", "reticulate", "lsa", "rtk", "logger", "openxlsx",
     "colorspace", "igraph", "data.table", "igraph", "SpiecEasi", "NetCoMi",
-    "tidyverse", "tools", "pals"
+    "tidyverse", "tools", "pals", "lmerTest", "emmeans"
   )
 )
 
@@ -232,6 +232,23 @@ list(
       tbl_cell_count
     )
   ),
+  # CLR scale genus and species
+  tar_target(
+    tbl_species_clr,
+    tbl_species |>
+      column_to_rownames("L6") |>
+      t() |>
+      compositions::clr() |>
+      t()
+  ),
+  tar_target(
+    tbl_genus_clr,
+    tbl_genus |>
+      column_to_rownames("L5") |>
+      t() |>
+      compositions::clr() |>
+      t()
+  ),
 
   # ==== ANALYSIS OF DIET COMPOSITION ====
   tar_target(
@@ -326,10 +343,15 @@ list(
     )
   ),
   tar_target(
-    plt_species_shannon,
+    plt_species_invsimp,
     plot_alpha_diversity(
-      lst_species_alpha$alpha_diversity |> select(shannon),
-      tbl_sample_metadata = tbl_sample_metadata
+      lst_species_alpha$alpha_diversity |> select(inv_simp),
+      tbl_sample_metadata = tbl_sample_metadata,
+      pval_manual = lst_lm_alpha_invsimp$model |>
+        anova() |>
+        rownames_to_column("factor") |>
+        filter(factor == "diet") |>
+        pull(`Pr(>F)`)
     )
   ),
   tar_target(
@@ -363,6 +385,74 @@ list(
       "summarise_alpha_diversity"
     )
   ),
+  # Alpha diversity linear models
+  tar_target(
+    lst_lm_alpha_richness,
+    lm_alpha_div(
+      tbl_alpha_div = lst_species_alpha$alpha_diversity,
+      tbl_sample_metadata = tbl_sample_metadata,
+      tbl_bioactive_intake = lst_bioactive_intakes$data
+    )
+  ),
+  tar_target(
+    pth_lm_richness_txt,
+    lm_alpha_div_txt(
+      lst_lm_alpha_richness,
+      "output/models/lm_richness.txt"
+    ),
+    format = "file"
+  ),
+  tar_target(
+    lst_lm_alpha_shannon,
+    lm_alpha_div(
+      tbl_alpha_div = lst_species_alpha$alpha_diversity,
+      tbl_sample_metadata = tbl_sample_metadata,
+      tbl_bioactive_intake = lst_bioactive_intakes$data,
+      measure = "shannon"
+    )
+  ),
+  tar_target(
+    pth_lm_shannon_txt,
+    lm_alpha_div_txt(
+      lst_lm_alpha_shannon,
+      "output/models/lm_shannon.txt"
+    ),
+    format = "file"
+  ),
+  tar_target(
+    lst_lm_alpha_invsimp,
+    lm_alpha_div(
+      tbl_alpha_div = lst_species_alpha$alpha_diversity,
+      tbl_sample_metadata = tbl_sample_metadata,
+      tbl_bioactive_intake = lst_bioactive_intakes$data,
+      measure = "inv_simp"
+    )
+  ),
+  tar_target(
+    pth_lm_invsimp_txt,
+    lm_alpha_div_txt(
+      lst_lm_alpha_invsimp,
+      "output/models/lm_invsimp.txt"
+    ),
+    format = "file"
+  ),
+  tar_target(
+    lst_lm_alpha_pielou,
+    lm_alpha_div(
+      tbl_alpha_div = lst_species_alpha$alpha_diversity,
+      tbl_sample_metadata = tbl_sample_metadata,
+      tbl_bioactive_intake = lst_bioactive_intakes$data,
+      measure = "pielou"
+    )
+  ),
+  tar_target(
+    pth_lm_pielou_txt,
+    lm_alpha_div_txt(
+      lst_lm_alpha_pielou,
+      "output/models/lm_pielou.txt"
+    ),
+    format = "file"
+  ),
 
   # Beta diversity
   tar_target(
@@ -392,6 +482,73 @@ list(
     write_table(
       tbl_summarise_bd,
       "summarise_beta_diversity"
+    )
+  ),
+
+  # Linear models for differential abunance
+  tar_target(
+    tbl_genus_lms,
+    taxa_model(
+      abundance = tbl_genus_clr,
+      tbl_sample_metadata = tbl_sample_metadata,
+      tbl_bioactive_intake = lst_bioactive_intakes$data
+    )
+  ),
+  tar_target(
+    tbl_genus_emmeans,
+    taxa_models_test(
+      models = tbl_genus_lms,
+      fact = "diet"
+    )
+  ),
+  tar_target(
+    tbl_species_lms,
+    taxa_model(
+      abundance = tbl_species_clr,
+      tbl_sample_metadata = tbl_sample_metadata,
+      tbl_bioactive_intake = lst_bioactive_intakes$data
+    )
+  ),
+  tar_target(
+    tbl_species_emmeans,
+    taxa_models_test(
+      models = tbl_species_lms,
+      fact = "diet"
+    )
+  ),
+  # Make supplementary plots of LM based differential abundance
+  tar_target(
+    plt_species_lm,
+    plot_taxa_lm(
+      tbl_lms = tbl_species_lms,
+      tbl_emmeans = tbl_species_emmeans,
+      n = 20
+    )
+  ),
+  tar_target(
+    plt_genus_lm,
+    plot_taxa_lm(
+      tbl_lms = tbl_genus_lms,
+      tbl_emmeans = tbl_genus_emmeans,
+      n = 20
+    )
+  ),
+  tar_target(
+    plt_taxa_lm,
+    (
+      plt_species_lm +
+      ggtitle("Difference in species EMMs") +
+      theme(legend.position = "bottom")
+    ) +
+    (
+      plt_genus_lm +
+      ggtitle("Difference in genus EMMs") +
+      theme(legend.position = "bottom")
+    ) +
+    plot_layout(guides = "collect") &
+    theme(
+      legend.position = "bottom",
+      plot.subtitle = element_text(size = 7)
     )
   ),
 
@@ -448,10 +605,15 @@ list(
     )
   ),
   tar_target(
-    plt_ko_shannon,
+    plt_ko_inv_simp,
     plot_alpha_diversity(
-      lst_ko_alpha$alpha_diversity |> select(shannon),
-      tbl_sample_metadata
+      lst_ko_alpha$alpha_diversity |> select(inv_simp),
+      tbl_sample_metadata,
+      pval_manual = lst_lm_ko_alpha_inv_simp$model |>
+        anova() |>
+        rownames_to_column("factor") |>
+        filter(factor == "diet") |>
+        pull(`Pr(>F)`)
     )
   ),
   tar_target(
@@ -479,6 +641,129 @@ list(
       tbl_sample_metadata
     )
   ),
+  # Linear models for KEGG alpha diversity
+  tar_target(
+    lst_lm_ko_alpha_richness,
+    lm_alpha_div(
+      tbl_alpha_div = lst_ko_alpha$alpha_diversity,
+      tbl_sample_metadata = tbl_sample_metadata,
+      tbl_bioactive_intake = lst_bioactive_intakes$data,
+      measure = "richness"
+    )
+  ),
+  tar_target(
+    pth_lm_ko_richness,
+    lm_alpha_div_txt(
+      lst_lm_ko_alpha_richness,
+      "output/models/ko_lm_richness.txt"
+    ),
+    format = "file"
+  ),
+  tar_target(
+    lst_lm_ko_alpha_shannon,
+    lm_alpha_div(
+      tbl_alpha_div = lst_ko_alpha$alpha_diversity,
+      tbl_sample_metadata = tbl_sample_metadata,
+      tbl_bioactive_intake = lst_bioactive_intakes$data,
+      measure = "shannon"
+    )
+  ),
+  tar_target(
+    pth_lm_ko_shannon,
+    lm_alpha_div_txt(
+      lst_lm_ko_alpha_shannon,
+      "output/models/ko_lm_shannon.txt"
+    ),
+    format = "file"
+  ),
+  tar_target(
+    lst_lm_ko_alpha_inv_simp,
+    lm_alpha_div(
+      tbl_alpha_div = lst_ko_alpha$alpha_diversity,
+      tbl_sample_metadata = tbl_sample_metadata,
+      tbl_bioactive_intake = lst_bioactive_intakes$data,
+      measure = "inv_simp"
+    )
+  ),
+  tar_target(
+    pth_lm_ko_inv_simp,
+    lm_alpha_div_txt(
+      lst_lm_ko_alpha_inv_simp,
+      "output/models/ko_lm_invsimp.txt"
+    ),
+    format = "file"
+  ),
+  tar_target(
+    lst_lm_ko_alpha_pielou,
+    lm_alpha_div(
+      tbl_alpha_div = lst_ko_alpha$alpha_diversity,
+      tbl_sample_metadata = tbl_sample_metadata,
+      tbl_bioactive_intake = lst_bioactive_intakes$data,
+      measure = "pielou"
+    )
+  ),
+  tar_target(
+    pth_lm_ko_pielou,
+    lm_alpha_div_txt(
+      lst_lm_ko_alpha_pielou,
+      "output/models/ko_lm_pielou.txt"
+    ),
+    format = "file"
+  ),
+
+  # Alpha diversity plots - makes a plot of ANOVA p-values and emmeans
+  # contrasts
+  tar_target(
+    lst_species_alpha_plots,
+    plt_alpha_lm_summary(
+      list(
+        richness = lst_lm_alpha_richness,
+        shannon = lst_lm_alpha_shannon,
+        inverse_simpson = lst_lm_alpha_invsimp,
+        pielou = lst_lm_alpha_pielou
+      )
+    )
+  ),
+  tar_target(
+    lst_ko_alpha_plots,
+    plt_alpha_lm_summary(
+      list(
+        richness = lst_lm_ko_alpha_richness,
+        shannon = lst_lm_ko_alpha_shannon,
+        inverse_simpson = lst_lm_ko_alpha_inv_simp,
+        pielou = lst_lm_ko_alpha_pielou
+      )
+    )
+  ),
+  # Combine these into a single supplementary plot
+  tar_target(
+    fig_supplement_alpha_lm,
+    (lst_species_alpha_plots$diet_emmeans + ggtitle("Species")) +
+    (lst_species_alpha_plots$anova + labs(subtitle = "ANOVA p-values")) +
+    (lst_ko_alpha_plots$diet_emmeans + ggtitle("KO")) +
+    (lst_ko_alpha_plots$anova + labs(subtitle = "ANOVA p-values")) +
+    plot_layout(
+      design="AB
+      CD",
+      widths = c(0.7, 0.4),
+      guides = "collect"
+    ) +
+    plot_annotation(
+      tag_levels = "A",
+    )
+  ),
+  tar_target(
+    pth_fig_alpha_lm,
+    write_figure(
+      fig_supplement_alpha_lm,
+      "output/figures/figure_alphalm_supp",
+      height = 4,
+      width = 8,
+      scale = 1.5
+    ) 
+  ),
+
+  # Species dbRDAs
   tar_target(
     lst_species_dbrda,
     diet_dbrda(
@@ -671,9 +956,11 @@ list(
     paper_figure_two(
       plt_species_pcoa  = plt_species_pcoa,
       plt_species_dbrda = plt_spec_dbrda,
-      plt_tax_shannon   = plt_species_shannon,
+      # Replaced Shannon with Inv Simp as most consistent between
+      # function and taxonomy when using linear model analyses
+      plt_tax_shannon   = plt_species_invsimp,
       plt_tax_bray      = plt_rare_scaled_species_bc_within,
-      plt_fun_shannon   = plt_ko_shannon,
+      plt_fun_shannon   = plt_ko_inv_simp,
       plt_fun_bray      = plt_ko_bray,
       plt_mgs_cazymes   = plt_mgs_substrate$sig
     )
