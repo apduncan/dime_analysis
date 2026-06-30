@@ -1,0 +1,411 @@
+---
+title: "Session 3 – Microbiome–Diet-SCFA Co-occurrence Network"
+subtitle: "SPIEC-EASI networks of metagenome abundance and SCFAs"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo    = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.width  = 8,
+  fig.height = 6
+)
+```
+
+## Introduction
+
+In the DIME paper, co-occurrence networks were built from high-dimensional PFAM protein family
+abundances and faecal metabolomics peaks. This takes a bit of time and introduces two kinds of data
+that we haven't seen before (the functional data, PFams, which are Protein Families, and raw metabolomics data). 
+
+Here we build the same type of network from scratch on the data we have been using today, which is much smaller. 
+SPIEC-EASI is meant for compositional data, so using it on the targeted SCFA data is not really appropriate 
+(however, it's not invalid, but the data will be treated compositionally though it is absolute, so it is not optimal). 
+
+- **Matrix A** - microbiome features (same species OTU table as sessions 1 & 2)
+- **Matrix B** - SCFAs 
+
+We'll run **SPIEC-EASI** on these two matrices, which jointly produces a network
+where edges can connect species to species, species to SCFAs, or SCFAs-SCFAs. 
+
+After that, we'll draw the network using the `igraph` package and if there's time, analyse network features with the NetCoMi package. 
+
+---
+
+## 1  Load packages
+
+```{r load}
+library(tidyverse)
+library(igraph)     # igraph::degree, betweenness, neighborhood, subgraph, …
+library(SpiecEasi)  # SpiecEasi::spiec.easi, getOptCov, getRefit
+library(NetCoMi)    # NetCoMi::netConstruct, netAnalyze, netCompare, diffnet
+
+source("../R/data.R")    # read_metadata(), read_taxa(), order_table()
+source("../R/theme.R")   # BIOACTIVE_COLORS, THEME_DIME
+```
+
+---
+
+## 2  Load data
+
+```{r load-data}
+tbl_md <- read_metadata("../data/source/sample_metadata.csv")
+
+# species-level abundance (L5 = species)
+tbl_species <- read_taxa("../data/source/microbiome/taxa/MGS.matL6.txt") |>
+  order_table()
+
+species_rel <- tbl_species |>
+  column_to_rownames(colnames(tbl_species)[1]) |>
+  as.matrix() |>
+  prop.table(margin = 2)   # relative abundance: columns sum to 1
+
+# SCFAs 
+tbl_scfa <- read_delim(
+  "../data/source/scfa/SCFA_DIME.csv", show_col_types = FALSE
+) |> rename(sample_id = ID) 
+```
+
+---
+
+## 3  Prepare feature matrices
+
+### 3.1 Filter species abundance to top 75
+
+We select the 75 most abundant species across all post-intervention samples - they
+account for ~66 % of the community. This is purely to save time; we're not using
+an HPC for this, and want it to be done in a few minutes. Ideally, we keep all the species!
+
+```{r species-prep}
+# Short name: strip lineage to species only
+trim_species <- function(x) {
+  parts <- strsplit(x, ";", fixed = TRUE)[[1]]
+  known <- parts[parts != "?"]
+  tail(known, 1)
+}
+
+hb_samples <- tbl_md |>
+  filter(sample_arm == "after_high") |>
+  pull(sample_id) 
+
+lb_samples <- tbl_md |>
+  filter(sample_arm == "after_low") |>
+  pull(sample_id) 
+
+mean_abund  <- rowMeans(species_rel[, c(hb_samples, lb_samples)])
+top_species <- names(sort(mean_abund, decreasing = TRUE)[75:0])
+
+cat(length(top_species), "species selected,",
+    length(hb_samples), "HB samples,", length(lb_samples), "LB samples\n")
+```
+
+### 3.2 Build the SCFA matrix
+
+**Matrix B** is the matrix of SCFAs.
+
+```{r diet-prep}
+
+# SCFAs: align to the same samples
+scfa_mat <- tbl_scfa |>
+  column_to_rownames("sample_id") |>
+  as.matrix()    # samples x SCFAs
+
+
+
+cat("SCLFA feature matrix:", nrow(scfa_mat), "samples x", ncol(scfa_mat), "features\n")
+cat("Features:", paste(colnames(scfa_mat), collapse = ", "), "\n")
+```
+
+### 3.3 Align all matrices per arm
+
+SPIEC-EASI requires both matrices to have the same samples in the same row order.
+
+```{r align-matrices}
+
+# Matrix A: species relative abundance (samples x species)
+mat_species_hb <- t(species_rel[top_species, hb_samples])
+mat_species_lb <- t(species_rel[top_species, lb_samples])
+
+# Matrix B: diet features (samples x diet features), same sample order
+mat_scfa_hb <- scfa_mat[hb_samples, ]
+mat_scfa_lb <- scfa_mat[lb_samples, ]
+```
+
+---
+
+## 4  Run SPIEC-EASI
+
+When `data` is a list of two matrices, `spiec.easi()` fits a model to both jointly: it
+applies CLR transformation to each matrix separately, then estimates the joint sparse
+inverse covariance matrix over all features. 
+
+To save time we're using fewer repetitions (10); you might want to increase this.
+Also, note that I've played around with nlambda to get the results to be stable, 
+these could be around 50 for better results. To speed up the process for the tutorial, 
+I've set `nlambda` to 20. 
+
+
+```{r run-spieceasi, cache=FALSE}
+
+se_hb <- SpiecEasi::spiec.easi(
+  list(mat_species_hb, mat_scfa_hb),
+  method = "glasso",
+  lambda.min.ratio = 0.1,
+  sel.criterion = 'bstars',
+  nlambda  = 20,
+  pulsar.params = list(rep.num = 10, ncores = 1, seed = 123)
+)
+
+
+
+se_lb <- SpiecEasi::spiec.easi(
+  list(mat_species_lb, mat_scfa_lb),
+  method = "glasso",
+  lambda.min.ratio = 0.1,
+  sel.criterion = 'bstars',
+  nlambda  = 20,
+  pulsar.params = list(rep.num = 10, ncores = 1, seed = 1234)
+)
+
+
+cat("HB stability:", SpiecEasi::getStability(se_hb))
+cat("LB stability:", SpiecEasi::getStability(se_lb))
+```
+
+How long did this step take for you? I found this took less than a minute.
+However, a higher stability (closer to 0.05) is better. 
+
+**Exercise:** change some of the parameters and look up the SPIEC-EASI documentation 
+to find other parameters that could be changes. How different is `method="MB"`?
+
+### Extract sparse association matrices
+
+If you just want to see the unweighted matrices, you can do this simply with 
+`se_hb |> getRefit() |> adj2igraph()`. However, to find the signs of different edges 
+in the association matrix, and their weightings, we need to do a little more work. 
+
+```{r extract-assoc}
+# Multiply the partial-correlation matrix by the binary refit mask:
+# non-zero entries = edges selected by the stability criterion.
+se_to_assoc <- function(se_net) {
+  cor_mat <- stats::cov2cor(as.matrix(SpiecEasi::getOptCov(se_net)))
+  ass     <- as.matrix(cor_mat * SpiecEasi::getRefit(se_net))
+  diag(ass) <- 1
+  features <- c(colnames(mat_species_hb), colnames(mat_scfa_hb))
+  rownames(ass) <- colnames(ass) <- features
+  ass
+}
+
+
+
+ass_hb <- se_to_assoc(se_hb)
+ass_lb <- se_to_assoc(se_lb)
+
+n_edges <- function(a) (sum(a != 0) - nrow(a)) / 2
+
+
+cat("HB:", nrow(ass_hb), "nodes,", n_edges(ass_hb), "edges\n")
+cat("LB:", nrow(ass_lb), "nodes,", n_edges(ass_lb), "edges\n")
+```
+
+---
+
+## 5  Plot with `igraph`
+
+This is also pretty complicated code. We take the adjacency matrix and convert it into 
+an igraph format by: 
+
+ - adding the weighting as a `corr` attribute to edges
+ - adding an edge colour for positive or negative correlations
+ - tagging vertices as either a species or a dietary feature
+
+```{r build-igraph}
+n_species <- ncol(mat_species_hb)   # number of species features (same for both arms)
+
+assoc_to_igraph <- function(ass_mat, n_species_nodes) {
+  adj <- ass_mat
+  diag(adj) <- 0
+  g <- igraph::graph_from_adjacency_matrix(adj != 0, mode = "undirected")
+
+  # Edge attributes
+  el <- igraph::as_edgelist(g, names = TRUE)
+  igraph::E(g)$corr  <- apply(el, 1, \(e) adj[e[1], e[2]])
+  igraph::E(g)$color <- ifelse(igraph::E(g)$corr > 0, "forestgreen", "brown2")
+
+  # Node type: first n_species_nodes vertices are species, rest are diet features
+  igraph::V(g)$type <- ifelse(
+    match(igraph::V(g)$name, rownames(ass_mat)) <= n_species_nodes,
+    "species", "scfa"
+  )
+
+  # SCFA - species edges
+  igraph::E(g)$inter <- apply(el, 1, \(e) {
+    igraph::V(g)[e[1]]$type != igraph::V(g)[e[2]]$type
+  })
+  g
+}
+
+ig_hb <- assoc_to_igraph(ass_hb, n_species)
+ig_lb <- assoc_to_igraph(ass_lb, n_species)
+```
+
+
+
+### Visualise paired network
+
+Species nodes are coloured by HB vs LB enrichment; diet nodes (SCFAs) are
+shown in orange. To compare two networks we use the NetCoMi package - 
+NetCoMi is useful for taking two networks and visualising them side-by-side using the 
+same layout. It also does statistical comparisons between the networks; though we won't use this now. 
+
+We do need to run netCoMi's `netAnalyze` and `netConstruct` methods to get access to it's plotting function.  
+
+```{r node-setup, include = TRUE, echo=TRUE, results = 'hide'}
+net_pair <- NetCoMi::netConstruct(
+  ass_hb, ass_lb,
+  dataType    = "partialCorr",
+  sparsMethod = "none",
+  verbose     = 0
+)
+
+net_props <- NetCoMi::netAnalyze(
+  net_pair,
+  centrLCC    = FALSE,
+  clustMethod = "cluster_fast_greedy",
+  hubPar      = "betweenness",
+  hubQuant    = 0.95,
+  normDeg = TRUE, normBetw = TRUE, normClose = TRUE, normEigen = TRUE
+)
+
+
+
+# Log2 fold-change for species enrichment direction
+lfc <- log2(
+  (rowMeans(species_rel[top_species, hb_samples]) + 1e-6) /
+  (rowMeans(species_rel[top_species, lb_samples]) + 1e-6)
+)
+species_col_cat <- case_when(
+  lfc >  0.5 ~ "High Bioactive",
+  lfc < -0.5 ~ "Low Bioactive",
+  TRUE        ~ "Neither"
+)
+
+# Diet node colour
+diet_col_cat <- setNames(
+  rep("Diet feature", ncol(scfa_mat)),
+  colnames(scfa_mat)
+)
+
+node_col_cat <- c(setNames(species_col_cat, top_species), diet_col_cat)
+
+BIO_COLORS_4 <- c(
+  "High Bioactive" = unname(BIOACTIVE_COLORS["High Bioactive"]),
+  "Low Bioactive"  = unname(BIOACTIVE_COLORS["Low Bioactive"]),
+  "Neither"        = "grey70",
+  "SCFA"           = "#f58231"
+)
+
+# Short labels: species; trim to species name. diet; keep as-is
+short_labels <- c(
+  setNames(map_chr(top_species, trim_species), top_species),
+  setNames(colnames(scfa_mat), colnames(scfa_mat))
+)
+
+# Node shape: circles for species, squares for diet features
+node_shape_vec <- c(
+  setNames(rep("circle", length(top_species)), top_species),
+  setNames(rep("square", ncol(scfa_mat)),       colnames(scfa_mat))
+)
+```
+
+
+```{r netcomi-plot, fig.width=14, fig.height=7}
+plot(
+  net_props,
+  sameLayout   = TRUE,
+  layoutGroup  = "union",
+  rmSingles    = "inboth",
+  labels       = short_labels,
+  labelScale   = FALSE,
+  nodeSize     = "degree",
+  cexNodes     = 1,
+  nodeSizeSpread = 1.5,
+  nodeColor    = "feature",
+  colorVec     = list(unname(BIO_COLORS_4), unname(BIO_COLORS_4)),
+  featVecCol   = node_col_cat,
+  nodeShape    = c("circle", "square"),
+  featVecShape = node_shape_vec,
+  nodeTransp   = 20,
+  highlightHubs = TRUE,
+  cexLabels    = 0.3,
+  cexHubLabels = 0.45,
+  edgeWidth    = 1.5,
+  edgeTranspLow  = 55,
+  edgeTranspHigh = 20,
+  groupNames   = c("High Bioactive", "Low Bioactive"),
+  cexTitle     = 1.2,
+  mar          = c(1, 1, 3, 1)
+)
+```
+
+
+
+We can also take a look at some of the network statistics: degree distributions of nodes is plotted below.
+
+```{r degree-by-type, fig.height=4}
+tbl_deg <- bind_rows(
+  tibble(node = igraph::V(ig_hb)$name,
+         type = igraph::V(ig_hb)$type,
+         degree = igraph::degree(ig_hb), arm = "High Bioactive"),
+  tibble(node = igraph::V(ig_lb)$name,
+         type = igraph::V(ig_lb)$type,
+         degree = igraph::degree(ig_lb), arm = "Low Bioactive")
+)
+
+ggplot(tbl_deg, aes(x = degree, fill = arm)) +
+  geom_histogram(binwidth = 1, position = "dodge", alpha = 0.8) +
+  facet_wrap(~type, scales = "free_y",
+             labeller = labeller(type = c(species = "species nodes",
+                                          scfa  = "SCFA nodes"))) +
+  scale_fill_manual(values = BIOACTIVE_COLORS) +
+  labs(title = "Degree distribution by node type",
+       x = "Degree", y = "Count", fill = "Diet arm") +
+  THEME_DIME
+```
+
+The degrees of the nodes are also higher in general for the low-bioactive arm, i.e. when there are fewer bioactives, 
+there are more associations between species (and between species - bioactives). The SCFAs have high degree - they're
+all linked together into one clump. 
+
+### Speices-SCFA edges
+
+```{r species-bioactive-edges}
+n_species <- top_species |> length()
+n_rows_total <- ass_lb |> rownames() |> length()
+rns <- ass_lb[1:n_species, (n_species+1):n_rows_total] |> rownames()
+cns <- ass_lb[1:n_species, (n_species+1):n_rows_total] |> colnames()
+
+for (r in rns) { 
+  for (c in cns) { 
+    if (ass_lb[r,c] > 0.0001) {
+      print(r); print(c); print(ass_lb[r,c])
+    } 
+  }
+}
+
+for (r in rns) { 
+  for (c in cns) { 
+    if (ass_hb[r,c] > 0.0001) {
+      print(r); print(c); print(ass_hb[r,c])
+    } 
+  }
+}
+
+```
+

@@ -14,7 +14,8 @@ RUN apt update && apt install -y \
 # Bioconductor installs
 RUN R -e 'BiocManager::install(ask = FALSE)' && \
     R -e 'BiocManager::install(c(\
-    "microbiome" \
+    "microbiome", \
+    "limma" \
     ), ask = FALSE)'
 RUN R -e 'install.packages("littler", repos="https://cran.r-project.org")'
 
@@ -49,7 +50,8 @@ RUN install2.r --error \
     lsa \
     rtk \
     logger \
-    openxlsx 
+    openxlsx \
+    svglite
     # colorspace
 
 # Install anything needed which has been removed from CRAN or needs a pinned
