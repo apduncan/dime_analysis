@@ -64,8 +64,9 @@ enterosignature_reapply <- function(
   #' be run in an environment where these CLI tools are available.
   #'
   #'
+  reapply_cmd <- "/opt/cvanmf_env/bin/reapply"
   system(
-    glue("reapply -i {pth_genus} -m 5es -o output/models/es/")
+    glue("{reapply_cmd} -i {pth_genus} -m 5es -o output/models/es/")
   )
   return("output/models/es/")
 }

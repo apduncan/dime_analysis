@@ -1,0 +1,565 @@
+---
+title: "Exploratory Data Analysis Tutorial – Dietary Bioactives, SCFAs, Metabolites, and Microbiome"
+subtitle: "Boxplots and heatmaps of the microbiome, bioactive, and SCFA data"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo    = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.width  = 8,
+  fig.height = 5
+)
+```
+
+## Overview
+
+This tutorial covers the main exploratory and differential analyses in the DIME paper,
+corresponding to **Figure 3** panels A-C, as well as a few other plots. 
+
+## Note on using AI
+
+This tutorial has A LOT of code in it. You can certainly use AI to play around with the code and data, however, please make sure you are really learning something while you do that!
+
+---
+
+## 1  Load packages
+
+```{r load}
+
+library(tidyverse)
+library(pheatmap)   # pheatmap::pheatmap for heatmaps
+library(ggrepel)    # ggrepel::geom_text_repel for volcano labels
+library(readxl)     # readxl::read_xlsx for metabolite data
+library(ggpubr)     # ggpubr::stat_compare_means for significance brackets
+
+source("../R/data.R")    # read_metadata(), read_taxa(), read_food_composition()
+source("../R/theme.R")   # BIOACTIVE_COLORS, BIOACTIVE_COLORS3, THEME_DIME
+
+# We also source metabolites.R later, only for the SCFA correlation functions
+```
+
+---
+
+## 2  Load Metadata
+
+
+Let's look at the metadata first. 
+We'll also add a column that signifies what kind of diet the participant had just finished:
+
+ - "baseline" for before their first diet, representative of their prior microbiome
+ - "before second diet" just after the midpoint phase, before starting their alternative diet
+ - "high / low bioactive" depending on which diet they'd just finished
+ - "midpoint" during the middle washout phase
+
+```{r load-data}
+# --- Metadata ---
+tbl_md <- read_metadata("../data/source/sample_metadata.csv")
+
+# Helper: add Diet column. 
+tbl_md <- tbl_md |>
+  mutate(Diet = case_when(
+    baseline                   ~ "Baseline",
+    sample_arm == "after_high" ~ "High Bioactive",
+    sample_arm == "after_low"  ~ "Low Bioactive", 
+    sample_arm == "midpoint"   ~ "Midpoint", 
+    TRUE                       ~ "Before Second Diet"
+  ))
+
+
+head(tbl_md)
+```
+**Exercises:** 
+
+ - Find out a few simple statistics about the metadata. How many different participants are there? How many are in the `low_high` arm, and how many in the `high_low` arm? Do all participants have 5 timepoints? 
+
+
+- We're using a helper function `read_metadata` here - it comes from the file `R/data.R`. Take a look at that file and search for it - `read_metadata` is just a simple function which reads the metadata table and adds another column. How is it doing that? 
+
+We'll use a few helper functions like this during the tutorial (mainly to save a bit of time), and flag them up when we do. 
+
+---
+
+## 3  Bioactive intake by diet arm
+
+The study compared a High Bioactive (HB) diet rich in plant bioactives against a
+Low Bioactive (LB) diet. Let's look at the dietary intakes on each diet, and confirm that 
+the diets really were very different. 
+
+We'll first load some of the diet data, again using a handy helper function. 
+
+```{r load-diet-data}
+# --- Dietary intakes (residual-adjusted) ---
+# read_food_composition() reads the TSV and splits columns into nutrients
+# vs bioactives using the nutrient reference file — similar to read_taxa().
+lst_diet <- read_food_composition(
+  "../data/source/diet/residual_adjusted.tsv",
+  "../data/source/diet/nutrient_diet.tsv"
+)
+# lst_diet$bioactive is a matrix: bioactives x samples
+
+lst_diet$bioactive |> as.data.frame() |> head()
+
+```
+
+We're going to plot the amount of bioactives that were found within different sample arms. 
+Take a look at the DIME paper (Supplementary Information) line 5 to get an idea of what we're aiming for. 
+
+We'll be making a lot of boxplots using ggplot. First we need to join the metadata to our diet information table. 
+
+```{r bioactive-boxplot-data-wrangling}
+# The bioactive matrix has compounds on rows, samples on columns.
+# Pivot to long format and join metadata.
+tbl_bioactive_long <- lst_diet$bioactive |>
+  as.data.frame() |>
+  rownames_to_column("bioactive") |>
+  pivot_longer(-bioactive, names_to = "sample_id", values_to = "intake") |>
+  left_join(tbl_md, by = "sample_id") 
+
+head(tbl_bioactive_long)
+```
+
+
+Now we'll build our boxplots. The full code is below but you might prefer to build the boxplots up, 
+running the code line-by-line. 
+
+To compare groups, we use the Wilcoxon signed-rank test. 
+
+```{r bioactive-boxplots, fig.height=8}
+
+
+ggplot(tbl_bioactive_long, aes(x = Diet, y = intake, colour = Diet, fill = Diet)) +
+  geom_boxplot(alpha = 0.4, outlier.size = 0.5, show.legend = FALSE) +
+  geom_jitter(width = 0.15, size = 0.4, alpha = 0.5, show.legend = FALSE) +
+  facet_wrap(~bioactive, scales = "free_y", ncol = 4) +
+  scale_x_discrete(
+    limits = c("Baseline", "Low Bioactive", "High Bioactive"),
+    labels = c("BL", "LB", "HB")
+  ) +
+  labs(
+    title  = "Bioactive intake by diet arm",
+    x = NULL, y = "Bioactive intake (mg)"
+  ) + 
+  ggpubr::stat_compare_means(
+  comparisons = list(
+    c("Baseline", "Low Bioactive"),
+    c("Baseline", "High Bioactive"),
+    c("Low Bioactive", "High Bioactive")
+  ),
+    method = "wilcox.test", size = 2
+  ) + 
+  scale_colour_manual(values = BIOACTIVE_COLORS3) +
+  scale_fill_manual(values = BIOACTIVE_COLORS3) + 
+  THEME_DIME
+```
+The high bioactive diet is very clearly working as intended. It's a bit surprising to me how similar the low bioactive and baseline
+distributions are for a lot of these compounds; though there are also some obvious differences. 
+
+**Exercise**:
+
+ - This boxplot shows every single bioactive in a different subplot. If you just want a single boxplot showing overall (total) bioactive intake per study arm, how can we do that? 
+
+---
+
+## 4  SCFA boxplots — Figure 3, Panel B
+
+Short-chain fatty acids (SCFAs) are produced by gut bacteria fermenting dietary fibre. 
+We compare concentrations of Acetate, Propionate, and Butyrate 
+(the three shortest SCFAs) between Baseline, Low Bioactive, and High Bioactive conditions. 
+
+```{r load-scfa-data}
+
+# --- SCFAs ---
+tbl_scfa <- read_delim("../data/source/scfa/SCFA_DIME.csv", show_col_types = FALSE)
+
+tbl_scfa |> head()
+```
+
+We're only interested in values after the diets - so we join this table with the metadata 
+and then filter; finally we select just the columns we need for the boxplots. 
+
+```{r scfa-boxplot-data}
+# The SCFA file has a column called ID (= sample_id) and one column per SCFA
+tbl_scfa_long <- tbl_scfa |>
+  rename(sample_id = ID) |>
+  left_join(tbl_md, by = "sample_id") |>
+  filter(sample_arm %in% c("after_high", "after_low") | baseline) |>
+  select(participant, Diet, Acetate:Butyrate) |>
+  pivot_longer(Acetate:Butyrate, names_to = "SCFA", values_to = "concentration")
+
+
+tbl_scfa_long
+```
+
+Once again, we'll build up the boxplots; it may help to run through the code line-by-line. 
+We don't find any significant differences between the low and high bioactive groups. 
+**Exercise:** If you have time, edit the code (and the block above) to look through some of the other SCFAs. 
+
+```{r plot-scfa-boxplots, fig.height=6, fig.width=5}
+
+ggplot(tbl_scfa_long, aes(x = Diet, y = concentration, fill = Diet, colour = Diet)) +
+  geom_boxplot(alpha = 0.5, show.legend = FALSE) +
+  facet_wrap(~SCFA, ncol = 1, scales = "free_y") +
+  ggpubr::stat_compare_means(
+    comparisons = list(c("Low Bioactive", "High Bioactive")),
+    method = "wilcox.test", paired = TRUE, size = 2,
+    symnum.args = list(
+      cutpoints = c(0, 0.001, 0.01, 0.05, Inf),
+      symbols   = c("***", "**", "*", "ns")
+    )
+  ) + 
+  labs(
+    title = "B  SCFA concentrations by diet arm",
+    x = NULL, y = "Concentration (mg/L)"
+  ) +
+  scale_fill_manual(values = BIOACTIVE_COLORS3) +
+  scale_colour_manual(values = BIOACTIVE_COLORS3) +
+  THEME_DIME 
+```
+
+---
+
+## 5  SCFA–bioactive correlation heatmap — Figure 3, Panel C
+
+We test whether SCFA concentrations correlate with bioactive intake within each diet arm. 
+To save time, and quite a lot of work, we'll use a helper function, in "R/metabolites.R". 
+Look at the code in `scfa_bioactive_correlation()` and
+`plot_scfa_bioactive_correlation()` helpers, which loop over SCFA x bioactive pairs,
+compute Pearson correlations and BH-adjusted q-values, and visualise the result as a
+heatmap.
+
+```{r scfa-corr-compute}
+source("../R/metabolites.R")
+
+
+lst_scfa_corr <- scfa_bioactive_correlation(
+  tbl_scfa       = tbl_scfa,
+  tbl_bioactive  = lst_diet$bioactive,
+  tbl_sample_metadata = tbl_md
+)
+# Returns a list with $high_bioactive and $low_bioactive correlation tables
+head(lst_scfa_corr$high_bioactive)
+```
+
+```{r scfa-corr-heatmap, fig.height=3, fig.width=9}
+
+plt_scfa_heatmap <- plot_scfa_bioactive_correlation(
+  lst_scfa_corr$high_bioactive,
+  main       = "C  SCFA–Bioactive correlation (High Bioactive arm)",
+  fontsize   = 8,
+  fontsize_row = 7,
+  fontsize_col = 7,
+  angle_col  = 45
+)
+```
+```{r scfa-corr-heatmap-2, fig.height=3, fig.width=9}
+
+plt_scfa_heatmap <- plot_scfa_bioactive_correlation(
+  lst_scfa_corr$low_bioactive,
+  main       = "C  SCFA–Bioactive correlation (Low Bioactive arm)",
+  fontsize   = 8,
+  fontsize_row = 7,
+  fontsize_col = 7,
+  angle_col  = 45
+)
+```
+
+---
+
+## 6  Genus-level abundance heatmap
+
+Before looking at correlations, beta diversity, and networks, it is useful to see which genera dominate each diet arm.
+We plot a heatmap of the top 30 most abundant genera (by mean relative abundance
+across post-intervention samples), annotated by diet arm. 
+
+
+```{r load-genus-data}
+# --- Genus-level microbiome (L5 = genus) ---
+tbl_genus <- read_taxa("../data/source/microbiome/taxa/MGS.matL5.txt") |>
+  order_table()
+
+tbl_genus |> head()
+```
+
+First, we'll take a look at the table, and apply total-sum-scaling. 
+
+```{r genus-tss}
+
+
+
+genus_col <- colnames(tbl_genus)[1]
+
+genus_rel <- tbl_genus |>
+  column_to_rownames(genus_col) |>
+  as.matrix() |>
+  prop.table(margin = 2)   # TSS: column proportions
+
+
+```
+
+Now let's select the top 30 genera, and also tidy up their names. 
+
+```{r genus-top}
+# Mean relative abundance across post-intervention samples
+mean_abund <- rowMeans(genus_rel)
+
+# Keep top 30; trim the lineage string to genus name only
+top_genera <- sort(mean_abund, decreasing = TRUE)[1:30] |> names()
+
+trim_to_genus <- function(x) {
+  parts <- strsplit(x, ";", fixed = TRUE)[[1]]
+  # Last non-'?' level
+  known <- parts[parts != "?"]
+  tail(known, 1)
+}
+
+genus_mat <- genus_rel[top_genera, ]
+rownames(genus_mat) <- map_chr(top_genera, trim_to_genus)
+```
+
+Finally, we're using the `pheatmap` function to draw the heatmap. 
+
+```{r genus-heatmap, fig.height=7, fig.width=9}
+# Column annotation: which diet arm is each sample?
+col_annot <- tbl_md |>
+  select(sample_id, Diet) |>
+  column_to_rownames("sample_id")
+
+annot_colours <- list(
+  Diet = c(
+    "High Bioactive" = unname(BIOACTIVE_COLORS3["High Bioactive"]),
+    "Low Bioactive"  = unname(BIOACTIVE_COLORS3["Low Bioactive"]), 
+    "Baseline"       = unname(BIOACTIVE_COLORS3["Baseline"]), 
+    "Midpoint"       = "pink", 
+    "Before Second Diet" = "white"
+  )
+)
+
+pheatmap::pheatmap(
+  log10(genus_mat + 1e-6),    # log-transform for visual range
+  annotation_col  = col_annot,
+  annotation_colors = annot_colours,
+  cluster_rows    = TRUE,
+  cluster_cols    = TRUE,
+  show_colnames   = FALSE,
+  fontsize_row    = 8,
+  treeheight_row  = 20,
+  treeheight_col  = 20,
+  main = "Top 30 genera (log10 relative abundance)"
+)
+```
+
+There are a few patterns, and we can see that there will clearly be a huge per-participant effect. 
+
+
+---
+
+## 7  Genus–bioactive correlations
+
+Finally, we test whether individual genera correlate with bioactive intake. We compute
+Spearman correlations between each (genus, bioactive) pair, 
+correct for multiple testing, and display genera with at least one significant association.
+
+### 7.1  Align matrices
+
+```{r genus-bioactive-align}
+# Bioactive intake matrix: bioactives on rows, samples on columns
+bio_mat <- lst_diet$bioactive
+
+# Restrict to samples present in both matrices
+sample_ids <- tbl_md$sample_id
+sample_ids <- intersect(sample_ids, colnames(bio_mat))
+
+genus_filt   <- genus_rel[top_genera, sample_ids]   # top genera x samples
+bio_all     <- bio_mat[, sample_ids]               # bioactives x samples
+
+cat(nrow(genus_filt), "genera x", nrow(bio_all), "bioactives across",
+    length(sample_ids), "samples\n")
+```
+
+### 7.2  Compute correlations and p-values
+
+```{r genus-bioactive-corr}
+# Build all (genus, bioactive) pairs and run cor.test() on each
+pairs <- expand.grid(
+  genus    = rownames(genus_filt),
+  bioactive = rownames(bio_all),
+  stringsAsFactors = FALSE
+)
+
+corr_results <- mapply(
+  FUN = function(g, b) {
+    res <- cor.test(
+      as.numeric(genus_filt[g, ]),
+      as.numeric(bio_all[b, ]),
+      method = "spearman"
+    )
+    c(rho = unname(res$estimate), pval = res$p.value)
+  },
+  pairs$genus, pairs$bioactive,
+  SIMPLIFY = TRUE
+) |> t() |> as.data.frame()
+
+pairs$rho  <- corr_results$rho
+pairs$pval <- corr_results$pval
+pairs$qval <- p.adjust(pairs$pval, method = "BH")
+
+# How many significant pairs?
+sum(pairs$qval <= 0.05)
+```
+
+So after taking into account multiple testing, there aren't any significant associations. 
+
+### 7.3  Heatmap of significant genera
+
+```{r genus-bioactive-heatmap, fig.height=6, fig.width=10}
+
+# There are too few genera with a significant q-value, let's just use p-values for this tutorial. 
+message("Too few genera pass q <= 0.05 — relaxing to p <= 0.05 for illustration")
+sig_genera <- pairs |> filter(pval <= 0.05) |> pull(genus) |> unique()
+
+# Build rho matrix and significance label matrix for significant genera
+tbl_sig <- pairs |> filter(genus %in% sig_genera)
+
+rho_mat <- tbl_sig |>
+  pivot_wider(id_cols = genus, names_from = bioactive, values_from = rho) |>
+  column_to_rownames("genus") |>
+  as.matrix()
+
+sig_labels <- tbl_sig |>
+  mutate(label = case_when(
+    qval  <= 0.05 ~ "**",
+    pval  <= 0.05 ~ "*",
+    TRUE          ~ ""
+  )) |>
+  pivot_wider(id_cols = genus, names_from = bioactive, values_from = label) |>
+  column_to_rownames("genus") |>
+  as.matrix()
+
+# Rename genera to short names for readability
+rownames(rho_mat)   <- map_chr(rownames(rho_mat), trim_to_genus)
+rownames(sig_labels) <- rownames(rho_mat)
+
+pheatmap::pheatmap(
+  rho_mat,
+  display_numbers = sig_labels,
+  cluster_cols    = TRUE,
+  cluster_rows    = TRUE,
+  breaks          = seq(-1, 1, length.out = 101),
+  color           = colorRampPalette(c("#619CFF", "white", "#00BA38"))(100),
+  fontsize_row    = 8,
+  fontsize_col    = 7,
+  angle_col       = 45,
+  treeheight_row  = 15,
+  main = "Genus–bioactive Spearman correlations\n** q≤0.05, * p≤0.05"
+)
+```
+
+There aren't any significant results (no q-values less than 0.05). However, there are still some interesting results!
+Butyribacter and Butyrivibrio both have a lot of p < 0.05 correlations, seemingly with opposite correlations. Perhaps 
+they are competing for the same niche? There also seem to be two main groups of metabolites, ... 
+
+Try redoing some of these graphs but just for the low bioactive or high bioactive arms of the study. Do you spot anything?
+
+
+Finally, as an exercise you can try redoing the heatmap but with SCFA data instead of bioactives. 
+(Code is below in case you get stuck.)
+
+
+```{r scfa-vs-genera-corrmap, fig.height=10, fig.width=12}
+sample_ids <- tbl_md |> pull("sample_id")
+
+genus_filt <- genus_rel[top_genera, sample_ids]
+scfa_all <- tbl_scfa |> filter(ID %in% sample_ids) |> column_to_rownames("ID") |> t() 
+
+
+pairs <- expand.grid(
+  genus    = rownames(genus_filt),
+  scfa = rownames(scfa_all),
+  stringsAsFactors = FALSE
+)
+
+corr_results <- mapply(
+  FUN = function(g, s) {
+    res <- cor.test(
+      as.numeric(genus_filt[g, ]),
+      as.numeric(scfa_all[s, ]),
+      method = "spearman"
+    )
+    c(rho = unname(res$estimate), pval = res$p.value)
+  },
+  pairs$genus, pairs$scfa,
+  SIMPLIFY = TRUE
+) |> t() |> as.data.frame()
+
+pairs$rho  <- corr_results$rho
+pairs$pval <- corr_results$pval
+pairs$qval <- p.adjust(pairs$pval, method = "BH")
+
+sig_genera <- pairs |> filter(pval <= 0.05) |> pull(genus) |> unique()
+
+# Build rho matrix and significance label matrix for significant genera
+tbl_sig <- pairs |> filter(genus %in% sig_genera)
+
+rho_mat <- tbl_sig |>
+  pivot_wider(id_cols = genus, names_from = scfa, values_from = rho) |>
+  column_to_rownames("genus") |>
+  as.matrix()
+
+sig_labels <- tbl_sig |>
+  mutate(label = case_when(
+    qval  <= 0.05 ~ "**",
+    pval  <= 0.05 ~ "*",
+    TRUE          ~ ""
+  )) |>
+  pivot_wider(id_cols = genus, names_from = scfa, values_from = label) |>
+  column_to_rownames("genus") |>
+  as.matrix()
+
+# Rename genera to short names for readability
+rownames(rho_mat)   <- map_chr(rownames(rho_mat), trim_to_genus)
+rownames(sig_labels) <- rownames(rho_mat)
+
+pheatmap::pheatmap(
+  rho_mat,
+  display_numbers = sig_labels,
+  cluster_cols    = TRUE,
+  cluster_rows    = TRUE,
+  breaks          = seq(-1, 1, length.out = 101),
+  color           = colorRampPalette(c("#619CFF", "white", "#00BA38"))(100),
+  fontsize_row    = 8,
+  fontsize_col    = 7,
+  angle_col       = 45,
+  treeheight_row  = 15,
+  main = "Genus–SCFA Spearman correlations\n** q≤0.05, * p≤0.05"
+)
+
+```
+
+
+---
+
+## Recap
+
+We've done a lot of exploring the data. This is useful because in the next sessions we'll be looking at much more 
+abstract / complicated analyses. So, you'll likely want to relate what you see in those analyses back to this
+much simpler analysis where you're looking at a 'raw' version of the data. 
+
+| Step | Function | What it does |
+|---|---|---|
+| Relative abundance | `prop.table(margin = 2)` | Converts read counts to per-sample proportions |
+| Pivot to long form | `pivot_longer()` | Reshapes wide matrix to ggplot-friendly format |
+| Wilcoxon signed-rank | `ggpubr::stat_compare_means(paired = TRUE)` | Pairwise test on paired (crossover) samples |
+| Heatmap | `pheatmap::pheatmap()` | Clustered heatmap with optional cell annotations |
+| Pairwise correlations | `cor.test(method = "spearman")` | Spearman rho + p-value per pair |
+| Multiple testing | `p.adjust(method = "BH")` | Benjamini–Hochberg FDR correction across all pairs |
+
+---
+
+

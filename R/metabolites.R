@@ -228,6 +228,7 @@ metabolite_labelled_supplementary <- function(
   #' @returns Path to Excel sheet
   dir.create(dirname(output_path), recursive = TRUE, showWarnings = FALSE)
   tbl_metab_annotations |>
+    rename(name = name_and_notes) |>
     filter(!is.na(isotopes) | !is.na(adduct) | !is.na(name)) |>
     select(project, ionmode, pcgroup, feature_id, isotopes, adduct, name) |>
     rename(
