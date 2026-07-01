@@ -339,7 +339,8 @@ match_abundance_metdata <- function(
 
 plot_alpha_diversity <- function(
   tbl_alpha_div,
-  tbl_sample_metadata
+  tbl_sample_metadata,
+  pval_manual = NA
 ) {
   #' Plot alpha diversity for LB and HB conditions
   #'
@@ -347,6 +348,11 @@ plot_alpha_diversity <- function(
   #' rarefaction. Expects a table with rownames being samples, and columns
   #' alpha diversity indices, with accepted column names being
   #' "inv_simp", "pielou", "richness", "shannon".
+  #' @param tbl_sample_metadata Sample metadata
+  #' @param pval_manual The p-value to display. Use this to display p-values
+  #' from a more complex test such as emmeans or lmerTest which is tougher
+  #' to implement in stat_compare_means. If left NA, will default to
+  #' non-parametric test from stat_compare_means.
 
   index_names <- c(
     inv_simp = "Inv.\nSimspon",
@@ -386,7 +392,6 @@ plot_alpha_diversity <- function(
     ) +
     geom_point(aes(color = diet), size = 1) +
     geom_line(aes(group = participant), linewidth = 0.1) +
-    stat_compare_means(comparisons = list(c(1, 2)), paired = TRUE, size = 2) +
     scale_y_continuous(
       expand = expansion(mult = c(0.1, 0.1))
     ) +
@@ -398,6 +403,23 @@ plot_alpha_diversity <- function(
     ylab(NULL) + xlab(NULL) +
     theme(legend.position="bottom") +
     ggtitle("Taxonomic Diversity")
+  if(is.na(pval_manual)) {
+    plt_ad <- plt_ad +
+      stat_compare_means(comparisons = list(c(1, 2)), paired = TRUE, size = 2)
+  } else {
+    # For comparisons, we need a p-val and a y-position for the bracket
+    # This only works for single measures
+    pval_df <- alpha_test |>
+      summarise(min = min(value), max = max(value)) |>
+      mutate(
+        pval = round(pval_manual, 3),
+        y.position = max + (0.05 * (max - min)),
+        group1 = "High Bioactive",
+        group2 = "Low Bioactive"
+      )
+    plt_ad <- plt_ad +
+      stat_pvalue_manual(pval_df, label = "pval", size = 2)
+  }
   return(plt_ad)
 }
 
@@ -824,7 +846,7 @@ paper_figure_two <- function(
       title = "Alpha Diversity",
       subtitle = "Taxonomy"
     ) +
-    ylab("Shannon") +
+    ylab("Inverse Simpson") +
     theme(strip.text = element_blank()) +
     remove_guides
   plt_funad_mod <- plt_fun_shannon +
@@ -1024,4 +1046,483 @@ summarise_beta_within <- function(
     mutate(Diet = ifelse(Diet == "Baseline", "Non-Intervention", Diet))
 
   fig2_data |> group_by(Diet) |> summarise(mean = mean(bc_dist))
+}
+
+#' Linear model for difference in alpha diversity between groups, also taking
+#' into account baseline bioactive intake, and allowing diet to be the
+#' factor representing change bioactive intake.
+lm_alpha_div <- function(
+  tbl_alpha_div,
+  tbl_sample_metadata,
+  tbl_bioactive_intake,
+  measure = "richness"
+) {
+  # Merge with metadata
+  tbl_merge <- tbl_alpha_div |>
+    rownames_to_column("sample_id") |>
+    left_join(
+      tbl_sample_metadata,
+      join_by("sample_id")
+    ) |>
+    # Restrict to only post intervention points
+    filter(
+      sample_arm %in% c("after_high", "after_low")
+    )
+
+  # Sum baseline bioactive intake
+  tbl_total <- tbl_bioactive_intake |>
+    group_by(sample_id) |>
+    summarise(
+      intake = sum(intake)
+    ) |>
+    left_join(
+      tbl_sample_metadata,
+      join_by("sample_id")
+    ) |>
+    filter(
+      baseline
+    )
+
+  # Add baseline bioactive intake into the metadata
+  tbl_merge <- tbl_merge |>
+    left_join(
+      tbl_total |>
+        select(intake, participant) |>
+        rename(baseline_bioactives = intake),
+        join_by("participant")
+    )  
+
+  # Model with interaction between sequence and diet, and baseline bioactives
+  richness_model <- lmer(
+    as.formula(glue(
+      "{measure} ~ diet + sequence + baseline_bioactives + (1|participant)"
+    )),
+    data = tbl_merge
+  )
+
+  # Differences in estimated marginal means between diets
+  em_richness_diet <- emmeans(
+    richness_model, 
+    pairwise~diet, 
+    weights = "proportional",
+    infer = TRUE,
+    adjust = "none",
+    lmerTest.limit = 10000
+  )
+
+  # Differences in estimated marginal menans between sequence
+  em_richness_seq <- emmeans(
+    richness_model, 
+    pairwise~sequence, 
+    weights = "proportional",
+    infer = TRUE,
+    adjust = "none",
+    lmerTest.limit = 10000
+  )
+
+  # Return these results
+  list(
+    model=richness_model,
+    em_diet=em_richness_diet,
+    em_sequence=em_richness_seq
+  )
+}
+
+lm_alpha_div_txt <- function(
+  lst_lm_alpha,
+  pth_out
+) {
+  #' Sink LM and EMM outputs to a text file
+  #'
+  #' @param lst_lm_alpha Model outputs
+  #' @param pth_out Text file to write output to
+
+  dir.create(dirname(pth_out), showWarnings = FALSE, recursive = TRUE)
+  cat(">>> MODEL\n", file = pth_out)
+  capture.output(
+    summary(lst_lm_alpha$model),
+    file = pth_out,
+    append = TRUE
+  )
+  cat(">>> SUMMARY(MODEL)\n", file = pth_out, append = TRUE)
+  capture.output(
+    summary(lst_lm_alpha$model),
+    file = pth_out,
+    append = TRUE
+  )
+  cat(">>> ANOVA(MODEL)\n", file = pth_out, append = TRUE)
+  capture.output(
+    anova(lst_lm_alpha$model),
+    file = pth_out,
+    append = TRUE
+  )
+  cat(">>> SUMMARY(EMM DIET)\n", file = pth_out, append = TRUE)
+  capture.output(
+    summary(lst_lm_alpha$em_diet),
+    file = pth_out,
+    append = TRUE
+  )
+  cat(">>> SUMMARY(EMM SEQUENCE)\n", file = pth_out, append = TRUE)
+  capture.output(
+    summary(lst_lm_alpha$em_sequence),
+    file = pth_out,
+    append = TRUE
+  )
+  pth_out
+}
+
+taxa_model <- function(
+  abundance,
+  tbl_sample_metadata,
+  tbl_bioactive_intake
+) {
+  #' Fit a mixed effects linear model for all taxa include in abundance.
+  #' Abundance should already have been transformed if desired.
+  #' This returns a list with a model for each of taxon.
+
+  # Make some formula compatible taxa names
+  taxa_names <- rownames(abundance) |>
+    str_replace_all(fixed(";"), "__") |>
+    str_replace_all(fixed("-"), "_") |>
+    str_replace_all(fixed(" "), "_") |>
+    str_replace_all(fixed("?"), "Unknown")
+  rownames(abundance) <- taxa_names
+  
+  # Total bioactive intake
+  tbl_total <- tbl_bioactive_intake |>
+    group_by(sample_id) |>
+    summarise(
+      baseline_bioactives = sum(intake)
+    ) |>
+    left_join(
+      tbl_sample_metadata,
+      join_by("sample_id")
+    ) |>
+    filter(
+      baseline
+    )
+
+  # Filter any taxa which are all 0
+  abundance_filt <- abundance[rowSums(abundance) > 0, ]
+  taxa_names <- rownames(abundance_filt)
+  joined_df <- abundance_filt |>
+    unclass() |>
+    t() |>
+    data.frame() |>
+    rownames_to_column("sample_id") |>
+    left_join(
+      tbl_sample_metadata,
+      join_by("sample_id")
+    ) |>
+    left_join(
+      tbl_total |>
+        select(participant, baseline_bioactives),
+      join_by("participant")
+    ) |>
+    # Post-post comparison only
+    filter(sample_arm %in% c("after_high", "after_low"))
+
+  models <- lapply(
+    taxa_names,
+    \(x) {
+      spec <- glue(
+          "{x} ~ diet + sequence + baseline_bioactives + (1|participant)")
+      model <- tryCatch(
+        lmer(spec, data = joined_df |> data.frame()),
+        error = function(e) {
+          print(glue("Error in {x}"))
+          print(e)
+          NA
+        }
+      )
+    }
+  )
+  models <- setNames(models, taxa_names)
+  models
+}
+
+taxa_model_test <- function(
+  model,
+  fact
+) {
+  #' Test differences in means for model between two level factor
+  
+  em <- emmeans(
+    model, 
+    as.formula(glue("pairwise~{fact}")), 
+    weights = "proportional",
+    infer = TRUE, adjust = "none",
+    lmerTest.limit = 10000
+  )
+  em
+}
+
+taxa_models_test <- function(
+  models,
+  fact
+) {
+  res <- map2(
+    names(models), 
+    models,
+    \(taxon, model) {
+      test_df <- tryCatch(
+        taxa_model_test(model, fact)$contrasts |>
+          as.data.frame(),
+        error = function(e) {
+          NA
+        }
+      )
+      if(is.na(test_df[[1]])) {
+        return(NULL)
+      }
+      if(dim(test_df)[1] > 0) {
+        test_df$taxon <- taxon
+        test_df$factor <- fact
+      }
+      return(test_df)
+    }
+  ) |> 
+  keep(\(x) !is.null(x)) |>
+  bind_rows()
+  res$`p.value.adj` <- p.adjust(res$`p.value`, method="fdr")
+  res
+}
+
+#' Sort lmer results and plot the estimated marginal means where ANOVA P < 0.1
+plot_taxa_lm <- function(
+  tbl_lms,
+  tbl_emmeans,
+  n = 20
+) {
+  use_models <- tbl_lms[!is.na(tbl_lms)]
+  tbl_anova <- use_models |>
+    map2(
+      names(use_models), 
+      function(model, name) {
+        df <- model |> anova() |> as.data.frame()
+        df$taxon <- name
+        df["diet", ]
+      }
+    ) |>
+    bind_rows()
+  # Connect to emmeans results
+  tbl_join <- tbl_anova |>
+    left_join(
+      tbl_emmeans,
+      join_by("taxon")
+    ) |>
+    arrange(`p.value`) |>
+    head(n) |>
+    mutate(
+      `p.value.text` = round(`p.value`, 3),
+      `taxon_nice` = taxon |> map_chr(\(x) {
+        s <- str_split(x, "__") |> unlist()
+        slen <- length(s)
+        paste0(s[(slen-1):slen], collapse = ";")
+      }),
+      taxon_nice = fct_reorder(taxon_nice, `p.value`, .desc = TRUE)
+    )
+  tbl_join |>
+    ggplot(
+      aes(
+        x = estimate,
+        y = taxon_nice,
+      )
+    ) +
+    geom_point(
+      aes(color = estimate > 0)
+    ) +
+    geom_text(
+      aes(label = `p.value.text`),
+      position = position_nudge(y = 0.4),
+      size = 3
+    ) +
+    scale_x_continuous(
+      expand = expansion(mult=0.1)
+    ) + 
+    geom_vline(xintercept = 0) +
+    geom_linerange(
+      aes(
+        xmin = `lower.CL`, xmax = `upper.CL`,
+        color = estimate > 0
+      )
+    ) +
+    THEME_DIME +
+    labs(
+      title = "Difference in EMMs",
+      subtitle = "clr(abundance) ~ diet + sequence + baseline_bioactives + (1|participant)",
+      x = "high - low",
+      y = "taxon"
+    ) +
+    scale_color_manual(
+      values = setNames(
+        c(BIOACTIVE_COLORS[2], BIOACTIVE_COLORS[1]),
+        c(TRUE, FALSE)
+      ),
+      name = "Increased in",
+      labels = c("LB", "HB")
+    )
+}
+
+# Make a plot summarising alpha diversity linear model results
+plt_alpha_lm_summary <- function(
+  alpha_models
+) {
+  anova_tbl <- map2(
+    alpha_models,
+    names(alpha_models),
+    function(model, name) {
+      tbl <- model$model |>
+        anova() |>
+        as.data.frame() |>
+        mutate(name = name) |>
+        rownames_to_column("factor")
+      tbl
+    }
+  ) |>
+    bind_rows() |>
+    mutate(
+      symbol = symnum(
+        `Pr(>F)`,
+        corr = FALSE,
+        cutpoints = c(0,  .001,.01,.05, .1, 1),
+        symbols = c("***","**","*","."," ")
+      )
+    )
+  plt_anova <- anova_tbl |>
+    ggplot(
+      aes(
+        x = name,
+        y = factor
+     )
+    ) +
+    geom_tile(
+      aes(
+        fill = `Pr(>F)`
+      )
+    ) +
+    geom_text(
+      aes(label = round(`Pr(>F)`, 3))
+    ) +
+    geom_text(
+      aes(
+        label = symbol
+      ),
+      position = position_nudge(y = 0.3)
+    ) +
+    scale_fill_gradientn(
+      colours = c("#ff0000", "#fffb00", "#120075"),
+      values = c(0, 0.1, 1),
+      limits = c(0, 1)
+    ) +
+    labs(
+      subtitle = (
+        alpha_models[[1]]$model |> formula() |> as.character()
+      )[[3]]
+    )
+
+  # emmeans summaries
+  diet_tbl <- map2(
+    alpha_models,
+    names(alpha_models),
+    function(model, name) {
+      plot(model$em_diet, comparisons = TRUE, plotit = FALSE) |>
+        mutate(name = name)
+    }
+  ) |>
+  bind_rows()
+  # Difference p-vals
+  pval_tbl <- map2(
+    alpha_models,
+    names(alpha_models),
+    function(model, name) {
+      model$em_diet$contrasts |>
+        as.data.frame() |>
+        mutate(name = name)
+    }
+  ) |>
+  bind_rows() |>
+  left_join(
+    diet_tbl |>
+      select(name, `upper.CL`, `lower.CL`) |>
+      group_by(name) |>
+      summarise(
+        max_y = max(`upper.CL`),
+        min_y = min(`lower.CL`)
+      ) |>
+      mutate(
+        label_y = max_y + ((max_y - min_y) * 0.08)
+      ) 
+  )
+  
+  # Make some more nicely combined plots of different models
+  plt_diet <- ggplot(
+    diet_tbl,
+    aes(
+      x = diet,
+    )
+  ) +
+  # Estimated mean ranges
+  geom_crossbar(
+    aes(
+      ymin = `lower.CL`,
+      ymax = `upper.CL`,
+      y = `the.emmean`,
+      color = diet,
+      fill = diet
+    ),
+    alpha = 0.6
+  ) +
+  # Comparison arrows
+  geom_segment(
+    aes(
+      y = `the.emmean`,
+      xend = diet,
+      yend = ifelse(is.na(lcmpl), rcmpl, lcmpl)
+    ),
+    color = "#383737",
+    arrow = arrow(length = unit(0.03, "npc"))
+  ) +
+  # pvals
+  geom_text(
+    data = pval_tbl,
+    aes(
+      label = glue("p={round(`p.value`, 3)}"),
+      y = label_y,
+      x = 1.5
+    )
+  ) +
+  facet_wrap(
+    ~name,
+    scales = "free",
+    ncol = length(alpha_models)
+  ) +
+  labs(
+    subtitle = (
+      alpha_models[[1]]$model |> formula() |> as.character()
+    )[[3]],
+    x = "Diet",
+    y = "Value"
+  ) +
+  scale_color_manual(
+    values = setNames(
+      c(BIOACTIVE_COLORS[2], BIOACTIVE_COLORS[1]),
+      c("high", "low")
+    ),
+    name = "Diet",
+    labels = c("HB", "LB")
+  ) +
+  scale_fill_manual(
+    values = setNames(
+      c(BIOACTIVE_COLORS[2], BIOACTIVE_COLORS[1]),
+      c("high", "low")
+    ),
+    name = "Increased in",
+    labels = c("HB", "LB")
+  ) +
+  guides(fill = "none")
+  list(
+    anova = plt_anova + THEME_DIME,
+    diet_emmeans = plt_diet + THEME_DIME
+  )
 }

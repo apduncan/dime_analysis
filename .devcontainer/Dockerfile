@@ -2,6 +2,10 @@ FROM bioconductor/bioconductor_docker:latest
 WORKDIR /workdir/
 
 # Required libraries
+
+LABEL org.opencontainers.image.source=https://github.com/apduncan/dime_analysis
+LABEL org.opencontainers.image.description="DIME analysis"
+
 RUN apt update && apt install -y \
     libglpk-dev python3 python3-pip python3-dev 
 
@@ -57,7 +61,9 @@ RUN install2.r --error \
 # Install anything needed which has been removed from CRAN or needs a pinned
 # version in the Dockerfile
 RUN R -e 'library(devtools);\
-    install_version("httpgd", version="2.0.2", ask = FALSE)'
+    install_version("httpgd", version="2.0.2", ask = FALSE);\
+    pak::pak("ycphs/openxlsx");\
+    install.packages("colorspace", repos = "https://R-Forge.R-project.org");'
 
 
 # Install some packages from custom repos, often need for VSCode extentions
@@ -71,3 +77,9 @@ RUN install2.r --error tidyverse
 # Create the environment and install cvanmf
 RUN python3 -m venv /opt/cvanmf_env && \
     /opt/cvanmf_env/bin/pip install --no-cache-dir cvanmf
+RUN install2.r --error openxlsx
+
+# LM requirements
+RUN install2.r --error \
+    emmeans \
+    lmerTest
