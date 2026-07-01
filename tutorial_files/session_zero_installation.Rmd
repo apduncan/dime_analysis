@@ -1,0 +1,49 @@
+# Session Zero - Installing Packages
+
+
+```{r yesterdays_session_packages}
+
+# packages for the third day
+install.packages(c(
+  "rtk","ggplot2","ape","vegan","cowplot","data.table","minpack.lm",
+  "Hmisc","reshape2","tidyverse","scales","coin","nlme","compositions",
+  "FSA","ggvenn","rstatix"))
+
+install.packages("remotes")
+remotes::install_github("DanielSprockett/reltools")
+
+if (!requireNamespace("BiocManager", quietly = TRUE)){
+    install.packages("BiocManager")
+}
+
+# for the third day
+BiocManager::install(c("phyloseq","DESeq2","decontam","microbiome"))
+
+# Some other useful packages (for the third day)
+install.packages(c(
+  "microViz", "pairwiseAdonis", "CompStellation", "RColorBrewer"))
+```
+
+```{r todays_session_packages}
+# packages for the final day
+install.packages(c("igraph", "pheatmap", "ggrepel", "readxl", "ggpubr"))
+
+# for the final day (network analysis)
+
+# the dev version installs properly on R 4.5.2
+remotes::install_github("zdk123/SpiecEasi@devel")
+
+# and we need an old version of NetCoMi... 
+# if prompted to update or keep existing packages, select option 3 - don't update any packages. 
+remotes::install_github("IrinaStatsLab/SPRING@3d641a4")
+remotes::install_github("tpq/propr")
+
+# 1. Install the last C++11 compatible version of RcppArmadillo
+remotes::install_version("RcppArmadillo", version = "14.4.2-1", upgrade = "never")
+
+# 2. Re-run your NetCoMi installation (select '3' to skip updates again)
+remotes::install_github("stefpeschel/NetCoMi@v1.0.1", 
+                         repos = c("https://cloud.r-project.org/",
+                                   BiocManager::repositories()))
+
+```

@@ -264,7 +264,7 @@ shown in orange. To compare two networks we use the NetCoMi package -
 NetCoMi is useful for taking two networks and visualising them side-by-side using the 
 same layout. It also does statistical comparisons between the networks; though we won't use this now. 
 
-We do need to run netCoMi's `netAnalyze` and `netConstruct` methods to get access to it's plotting function.  
+We do need to run NetCoMi's `netAnalyze` and `netConstruct` methods to get access to it's plotting function.  
 
 ```{r node-setup, include = TRUE, echo=TRUE, results = 'hide'}
 net_pair <- NetCoMi::netConstruct(
@@ -329,7 +329,7 @@ node_shape_vec <- c(
 plot(
   net_props,
   sameLayout   = TRUE,
-  layoutGroup  = "union",
+  layoutGroup  = 2,
   rmSingles    = "inboth",
   labels       = short_labels,
   labelScale   = FALSE,
@@ -337,7 +337,7 @@ plot(
   cexNodes     = 1,
   nodeSizeSpread = 1.5,
   nodeColor    = "feature",
-  colorVec     = list(unname(BIO_COLORS_4), unname(BIO_COLORS_4)),
+  colorVec     = unname(BIO_COLORS_4), 
   featVecCol   = node_col_cat,
   nodeShape    = c("circle", "square"),
   featVecShape = node_shape_vec,
