@@ -276,7 +276,7 @@ net_pair <- NetCoMi::netConstruct(
 
 net_props <- NetCoMi::netAnalyze(
   net_pair,
-  centrLCC    = FALSE,
+  #centrLCC    = FALSE,
   clustMethod = "cluster_fast_greedy",
   hubPar      = "betweenness",
   hubQuant    = 0.95,

@@ -67,8 +67,8 @@ tbl_md <- tbl_md |>
   mutate(Diet = case_when(
     baseline                   ~ "Baseline",
     sample_arm == "after_high" ~ "High Bioactive",
-    sample_arm == "after_low"  ~ "Low Bioactive", 
-    sample_arm == "midpoint"   ~ "Midpoint", 
+    sample_arm == "after_low"  ~ "Low Bioactive",
+    sample_arm == "midpoint"   ~ "Midpoint",
     TRUE                       ~ "Before Second Diet"
   ))
 
@@ -108,6 +108,8 @@ lst_diet$bioactive |> as.data.frame() |> head()
 
 ```
 
+**Exercises:** Which bioactives had the highest and lowest (residualised) mean intake? 
+
 We're going to plot the amount of bioactives that were found within different sample arms. 
 Take a look at the DIME paper (Supplementary Information) line 5 to get an idea of what we're aiming for. 
 
@@ -120,7 +122,7 @@ tbl_bioactive_long <- lst_diet$bioactive |>
   as.data.frame() |>
   rownames_to_column("bioactive") |>
   pivot_longer(-bioactive, names_to = "sample_id", values_to = "intake") |>
-  left_join(tbl_md, by = "sample_id") 
+  left_join(tbl_md, by = "sample_id")
 
 head(tbl_bioactive_long)
 ```
@@ -134,7 +136,8 @@ To compare groups, we use the Wilcoxon signed-rank test.
 ```{r bioactive-boxplots, fig.height=8}
 
 
-ggplot(tbl_bioactive_long, aes(x = Diet, y = intake, colour = Diet, fill = Diet)) +
+ggplot(tbl_bioactive_long,
+       aes(x = Diet, y = intake, colour = Diet, fill = Diet)) +
   geom_boxplot(alpha = 0.4, outlier.size = 0.5, show.legend = FALSE) +
   geom_jitter(width = 0.15, size = 0.4, alpha = 0.5, show.legend = FALSE) +
   facet_wrap(~bioactive, scales = "free_y", ncol = 4) +
@@ -145,17 +148,16 @@ ggplot(tbl_bioactive_long, aes(x = Diet, y = intake, colour = Diet, fill = Diet)
   labs(
     title  = "Bioactive intake by diet arm",
     x = NULL, y = "Bioactive intake (mg)"
-  ) + 
+  ) +
   ggpubr::stat_compare_means(
-  comparisons = list(
-    c("Baseline", "Low Bioactive"),
-    c("Baseline", "High Bioactive"),
-    c("Low Bioactive", "High Bioactive")
-  ),
-    method = "wilcox.test", size = 2
-  ) + 
+    comparisons = list(
+      c("Baseline", "Low Bioactive"),
+      c("Baseline", "High Bioactive"),
+      c("Low Bioactive", "High Bioactive")
+    ), method = "wilcox.test", size = 2
+  ) +
   scale_colour_manual(values = BIOACTIVE_COLORS3) +
-  scale_fill_manual(values = BIOACTIVE_COLORS3) + 
+  scale_fill_manual(values = BIOACTIVE_COLORS3) +
   THEME_DIME
 ```
 The high bioactive diet is very clearly working as intended. It's a bit surprising to me how similar the low bioactive and baseline
@@ -176,7 +178,9 @@ We compare concentrations of Acetate, Propionate, and Butyrate
 ```{r load-scfa-data}
 
 # --- SCFAs ---
-tbl_scfa <- read_delim("../data/source/scfa/SCFA_DIME.csv", show_col_types = FALSE)
+tbl_scfa <- read_delim(
+                       "../data/source/scfa/SCFA_DIME.csv",
+                       show_col_types = FALSE)
 
 tbl_scfa |> head()
 ```
@@ -203,7 +207,8 @@ We don't find any significant differences between the low and high bioactive gro
 
 ```{r plot-scfa-boxplots, fig.height=6, fig.width=5}
 
-ggplot(tbl_scfa_long, aes(x = Diet, y = concentration, fill = Diet, colour = Diet)) +
+ggplot(tbl_scfa_long, 
+       aes(x = Diet, y = concentration, fill = Diet, colour = Diet)) +
   geom_boxplot(alpha = 0.5, show.legend = FALSE) +
   facet_wrap(~SCFA, ncol = 1, scales = "free_y") +
   ggpubr::stat_compare_means(
@@ -213,7 +218,7 @@ ggplot(tbl_scfa_long, aes(x = Diet, y = concentration, fill = Diet, colour = Die
       cutpoints = c(0, 0.001, 0.01, 0.05, Inf),
       symbols   = c("***", "**", "*", "ns")
     )
-  ) + 
+  ) +
   labs(
     title = "B  SCFA concentrations by diet arm",
     x = NULL, y = "Concentration (mg/L)"
@@ -258,6 +263,9 @@ plt_scfa_heatmap <- plot_scfa_bioactive_correlation(
   angle_col  = 45
 )
 ```
+
+**Exercise:** Plot the same for the low bioactive arm (answer below). 
+
 ```{r scfa-corr-heatmap-2, fig.height=3, fig.width=9}
 
 plt_scfa_heatmap <- plot_scfa_bioactive_correlation(
@@ -334,9 +342,9 @@ col_annot <- tbl_md |>
 annot_colours <- list(
   Diet = c(
     "High Bioactive" = unname(BIOACTIVE_COLORS3["High Bioactive"]),
-    "Low Bioactive"  = unname(BIOACTIVE_COLORS3["Low Bioactive"]), 
-    "Baseline"       = unname(BIOACTIVE_COLORS3["Baseline"]), 
-    "Midpoint"       = "pink", 
+    "Low Bioactive"  = unname(BIOACTIVE_COLORS3["Low Bioactive"]),
+    "Baseline"       = unname(BIOACTIVE_COLORS3["Baseline"]),
+    "Midpoint"       = "pink",
     "Before Second Diet" = "white"
   )
 )
